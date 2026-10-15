@@ -1,0 +1,21 @@
+services:
+  life-compass:
+    build: .
+    ports:
+      - "${LIFE_COMPASS_PORT:-8090}:8090"
+    environment:
+      LIFE_COMPASS_DB: /app/data/life-compass.db
+      LIFE_COMPASS_LLM_BASE_URL: ${LIFE_COMPASS_LLM_BASE_URL:-https://api.openai.com/v1}
+      LIFE_COMPASS_LLM_API_KEY: ${LIFE_COMPASS_LLM_API_KEY:-}
+      LIFE_COMPASS_LLM_MODEL: ${LIFE_COMPASS_LLM_MODEL:-gpt-4.1-mini}
+    volumes:
+      - life_compass_data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/api/health')"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  life_compass_data:

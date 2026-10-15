@@ -1,0 +1,1 @@
+"""Life Compass backend."""

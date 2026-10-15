@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="从《人生进阶指南》整理而来的本地个人教练与知识检索工具。" />
+    <title>人生罗盘｜把判断还给自己</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <div class="shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="brand">
+          <span class="brand-seal" aria-hidden="true">向</span>
+          <div><strong>人生罗盘</strong><small>LOCAL COMPASS</small></div>
+        </div>
+        <nav>
+          <button class="nav-item active" data-view="today"><span>01</span>今日罗盘</button>
+          <button class="nav-item" data-view="coach"><span>02</span>深度对话</button>
+          <button class="nav-item" data-view="library"><span>03</span>知识地图</button>
+          <button class="nav-item" data-view="actions"><span>04</span>行动与记忆</button>
+          <button class="nav-item" data-view="review"><span>05</span>证据与复盘</button>
+        </nav>
+        <div class="privacy-note">
+          <b>私人工作区</b>
+          <p>你的填写内容只保存在当前浏览器，不会上传。</p>
+        </div>
+        <button class="clear-button" id="clear-data">清除我的本地记录</button>
+      </aside>
+
+      <div class="content-frame">
+        <header class="topbar">
+          <button class="menu-button" id="menu-button" aria-label="打开导航" aria-expanded="false">目录</button>
+          <p><span class="status-dot"></span><span id="index-status">正在载入知识库…</span></p>
+          <div class="top-actions">
+            <button id="export-data">导出记录</button>
+            <time id="today-label"></time>
+          </div>
+        </header>
+
+        <main id="main">
+          <section class="view active" id="view-today" aria-labelledby="today-title">
+            <div class="hero">
+              <p class="eyebrow">TODAY · ONE HONEST STEP</p>
+              <h1 id="today-title">今天不必解决人生。<br /><em>先看清下一步。</em></h1>
+              <p class="hero-copy">从真实问题出发，留下一个事实、一个边界和一个能够完成的动作。</p>
+              <button class="primary-action" data-go="coach">开始一次梳理 <span aria-hidden="true">→</span></button>
+            </div>
+
+            <section class="entry-section" aria-labelledby="entry-title">
+              <div class="section-heading">
+                <div><p class="eyebrow">CHOOSE AN ENTRY</p><h2 id="entry-title">你现在更接近哪种处境？</h2></div>
+                <p>不需要按顺序学习，只选择今天真正相关的一条。</p>
+              </div>
+              <div class="entry-grid" id="entry-grid"></div>
+            </section>
+
+            <section class="principle-band" aria-label="核心方法">
+              <p>这套工具不替你决定</p>
+              <ol>
+                <li><b>看见</b><span>事实与容量</span></li>
+                <li><b>缩小</b><span>一个可逆动作</span></li>
+                <li><b>留下</b><span>证据与边界</span></li>
+                <li><b>回来</b><span>复查并修正</span></li>
+              </ol>
+            </section>
+          </section>
+
+          <section class="view" id="view-coach" aria-labelledby="coach-title">
+            <div class="page-head">
+              <p class="eyebrow">GUIDED REFLECTION</p>
+              <h1 id="coach-title">把混乱整理成一张可行动的纸</h1>
+              <p>先做安全检查，再区分事实、解释和价值。你始终保留最终决定权。</p>
+            </div>
+
+            <section class="dialogue-workspace" aria-labelledby="dialogue-title">
+              <aside class="session-rail">
+                <div class="session-rail-head"><div><p class="eyebrow">CONVERSATIONS</p><h2 id="dialogue-title">持续对话</h2></div><button id="new-session" aria-label="新建对话">＋</button></div>
+                <label for="chat-topic">当前主题</label>
+                <select id="chat-topic"><option>选择</option><option>学习</option><option>项目</option><option>关系</option><option>恢复</option><option>自我</option></select>
+                <div class="session-list" id="session-list"><p class="mini-empty">尚无对话</p></div>
+              </aside>
+              <div class="chat-panel">
+                <div class="chat-context">
+                  <div><span class="model-badge" id="model-badge">本地教练</span><b id="chat-title">开始一段新对话</b></div>
+                  <p>书稿检索、长期记忆与最近对话会共同进入上下文。</p>
+                </div>
+                <div class="message-list" id="message-list" aria-live="polite">
+                  <div class="chat-empty"><span>问</span><h3>先带来一个真实问题</h3><p>我会引用相关章节、区分事实与解释，并帮助你找到一个可逆的下一步。</p></div>
+                </div>
+                <form class="chat-composer" id="chat-form">
+                  <label class="sr-only" for="chat-input">写下问题或继续对话</label>
+                  <textarea id="chat-input" rows="3" required placeholder="写下问题、刚发生的新事实，或对上一次回答的不同意见…"></textarea>
+                  <div class="composer-actions">
+                    <label class="urgent-toggle"><input type="checkbox" id="chat-urgent" /><span>存在紧迫危险</span></label>
+                    <button class="primary-action" id="send-message" type="submit">发送</button>
+                  </div>
+                  <p class="form-error" id="chat-error" role="alert"></p>
+                </form>
+              </div>
+            </section>
+
+            <div class="subsection-head"><p class="eyebrow">STRUCTURED BRIEF</p><h2>或者，先独立完成一张结构化简报</h2><p>这份表单仍保存在浏览器本地，适合在进入对话前自己想一遍。</p></div>
+
+            <div class="coach-layout">
+              <form class="coach-form" id="coach-form">
+                <fieldset>
+                  <legend><span>01</span> 当前问题</legend>
+                  <label for="topic">我正在面对什么？</label>
+                  <select id="topic" name="topic">
+                    <option value="选择">重要选择</option>
+                    <option value="学习">学习与能力</option>
+                    <option value="项目">项目与工作</option>
+                    <option value="关系">关系与沟通</option>
+                    <option value="恢复">低谷与恢复</option>
+                    <option value="自我">自我与长期方向</option>
+                  </select>
+                  <label for="question">用一句话写下真实问题</label>
+                  <textarea id="question" name="question" rows="3" required placeholder="例如：我是否应该接受这个新项目？"></textarea>
+                </fieldset>
+
+                <fieldset class="safety-fieldset">
+                  <legend><span>02</span> 安全与容量</legend>
+                  <label class="check-row"><input type="checkbox" name="urgent" /><span><b>目前存在紧迫危险</b><small>包括伤害计划、暴力威胁、无法保证基本安全或正在扩大的现实危险。</small></span></label>
+                  <label for="capacity">今天可用的精力</label>
+                  <select id="capacity" name="capacity"><option>很低：只能做 5 分钟</option><option selected>一般：可以投入 20–30 分钟</option><option>稳定：可以完成一个完整任务</option></select>
+                </fieldset>
+
+                <fieldset>
+                  <legend><span>03</span> 分开来看</legend>
+                  <label for="facts">已经确认的事实</label>
+                  <textarea id="facts" name="facts" rows="3" placeholder="只写能指出来源、日期或直接观察的内容。"></textarea>
+                  <label for="interpretation">我的解释或担心</label>
+                  <textarea id="interpretation" name="interpretation" rows="3" placeholder="它可能真实，也可能需要修正。"></textarea>
+                  <label for="boundary">必须守住的边界</label>
+                  <textarea id="boundary" name="boundary" rows="2" placeholder="安全、健康、隐私、金钱、关系或责任底线。"></textarea>
+                </fieldset>
+
+                <fieldset>
+                  <legend><span>04</span> 下一次实验</legend>
+                  <label for="action">现在能完成的最小动作</label>
+                  <textarea id="action" name="action" rows="2" placeholder="尽量可逆、具体，并与今天的容量相符。"></textarea>
+                  <div class="form-pair">
+                    <div><label for="evidence">完成后留下什么证据？</label><input id="evidence" name="evidence" placeholder="一页记录、一次反馈、一个文件…" /></div>
+                    <div><label for="reviewDate">何时回来复查？</label><input type="date" id="reviewDate" name="reviewDate" /></div>
+                  </div>
+                </fieldset>
+                <p class="form-error" id="coach-error" role="alert"></p>
+                <button class="primary-action submit-action" type="submit">生成我的行动简报</button>
+              </form>
+
+              <aside class="coach-output" aria-live="polite">
+                <div class="output-placeholder" id="output-placeholder">
+                  <span>一</span><h2>先写，再判断</h2><p>你的简报会在这里形成。工具不会替你补写事实，也不会替你做不可逆决定。</p>
+                </div>
+                <div id="coach-result" hidden></div>
+              </aside>
+            </div>
+          </section>
+
+          <section class="view" id="view-actions" aria-labelledby="actions-title">
+            <div class="page-head">
+              <p class="eyebrow">ACTION · MEMORY · REVIEW DATE</p>
+              <h1 id="actions-title">让对话留下可以回来的地方</h1>
+              <p>长期记忆必须由你主动保存；行动必须有证据或复查条件，而不只是一个待办标题。</p>
+            </div>
+            <div class="action-metrics" id="action-metrics">
+              <div><span>待行动</span><b>0</b></div><div><span>已完成</span><b>0</b></div><div><span>长期记忆</span><b>0</b></div>
+            </div>
+            <div class="action-layout">
+              <section class="task-column">
+                <div class="column-head"><div><p class="eyebrow">NEXT ACTIONS</p><h2>行动与复查</h2></div></div>
+                <form class="inline-create" id="task-form">
+                  <label for="task-title">下一项最小行动</label>
+                  <input id="task-title" required placeholder="例如：列出三个可逆选项" />
+                  <div class="form-pair"><div><label for="task-due">复查日期</label><input id="task-due" type="date" /></div><div><label for="task-evidence">预期证据</label><input id="task-evidence" placeholder="一页选择简报" /></div></div>
+                  <button class="primary-action" type="submit">保存行动</button><p class="form-error" id="task-error" role="alert"></p>
+                </form>
+                <div class="task-list" id="task-list"><div class="record-empty">还没有行动。</div></div>
+              </section>
+              <section class="memory-column">
+                <div class="column-head"><div><p class="eyebrow">CONSENTED MEMORY</p><h2>我允许工具记住</h2></div></div>
+                <p class="column-note">只保存未来确实需要的背景、边界或已验证方法。不要保存密码、精确地址、医疗隐私或第三方秘密。</p>
+                <form class="inline-create" id="memory-form">
+                  <label for="memory-kind">记忆类型</label><select id="memory-kind"><option value="boundary">边界</option><option value="context">长期背景</option><option value="method">已验证方法</option><option value="preference">沟通偏好</option></select>
+                  <label for="memory-content">内容</label><textarea id="memory-content" rows="3" required placeholder="例如：涉及客户资料时，只使用脱敏后的本地数据。"></textarea>
+                  <button class="primary-action" type="submit">主动保存这条记忆</button><p class="form-error" id="memory-error" role="alert"></p>
+                </form>
+                <div class="memory-list" id="memory-list"><div class="record-empty">还没有长期记忆。</div></div>
+              </section>
+            </div>
+          </section>
+
+          <section class="view" id="view-library" aria-labelledby="library-title">
+            <div class="page-head library-head">
+              <div><p class="eyebrow">KNOWLEDGE ATLAS</p><h1 id="library-title">在整本书里寻找一个更好的问题</h1></div>
+              <label class="search-box" for="library-search"><span>搜索</span><input id="library-search" type="search" placeholder="边界、选择、AI、恢复…" /></label>
+            </div>
+            <div class="topic-filters" id="topic-filters" aria-label="主题筛选"></div>
+            <p class="result-count" id="result-count"></p>
+            <div class="library-results" id="library-results"></div>
+          </section>
+
+          <section class="view" id="view-review" aria-labelledby="review-title">
+            <div class="page-head">
+              <p class="eyebrow">EVIDENCE · NOT SELF-JUDGMENT</p>
+              <h1 id="review-title">让证据改变下一步，不给人格打分</h1>
+              <p>保存的是判断发生变化的理由，而不是连续打卡的表演。</p>
+            </div>
+            <div class="review-grid">
+              <section class="review-editor">
+                <h2>本周五问</h2>
+                <form id="review-form">
+                  <label for="changed">哪个事实改变了我的判断？</label><textarea id="changed" name="changed" rows="2"></textarea>
+                  <label for="result">哪个动作留下了可以检查的结果？</label><textarea id="result" name="result" rows="2"></textarea>
+                  <label for="repeated">哪个错误在重复？</label><textarea id="repeated" name="repeated" rows="2"></textarea>
+                  <label for="clearBoundary">哪个边界需要更清楚？</label><textarea id="clearBoundary" name="clearBoundary" rows="2"></textarea>
+                  <label for="experiment">下周只保留哪一个实验？</label><textarea id="experiment" name="experiment" rows="2"></textarea>
+                  <button class="primary-action" type="submit">保存本周复盘</button>
+                </form>
+              </section>
+              <section class="history-panel">
+                <div class="history-head"><div><p class="eyebrow">YOUR LOCAL RECORDS</p><h2>最近留下的记录</h2></div><span id="record-total">0 条</span></div>
+                <div id="record-list" class="record-list"></div>
+              </section>
+            </div>
+          </section>
+        </main>
+
+        <footer>
+          <p>方法与节选整理自韩先凯（离谱）《人生进阶指南》，内容遵循 CC BY-NC 4.0。</p>
+          <p>它是一张地图，不是医疗、心理、法律或财务建议。</p>
+        </footer>
+      </div>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>
