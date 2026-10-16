@@ -246,7 +246,20 @@
               <label class="search-box" for="library-search"><span>搜索</span><input id="library-search" type="search" placeholder="边界、选择、AI、恢复…" /></label>
             </div>
             <div class="topic-filters" id="topic-filters" aria-label="主题筛选"></div>
-            <p class="result-count" id="result-count"></p>
+            <div class="library-toolbar">
+              <p class="result-count" id="result-count"></p>
+              <div class="view-switch" role="group" aria-label="知识地图展示方式">
+                <button id="graph-view-button" type="button" aria-pressed="true">关系图</button>
+                <button id="list-view-button" type="button" aria-pressed="false">文档列表</button>
+              </div>
+            </div>
+            <section class="knowledge-graph" id="knowledge-graph" aria-label="文档与主题关系图">
+              <header>
+                <div><span class="graph-dot topic-dot"></span>主题节点 <span class="graph-dot document-dot"></span>完整文档</div>
+                <p id="graph-focus" aria-live="polite">选择一个文档节点阅读整篇，选择主题节点筛选关系。</p>
+              </header>
+              <svg id="knowledge-graph-svg" viewBox="0 0 1000 760" role="img" aria-label="人生指南文档与主题之间的关系"></svg>
+            </section>
             <div class="library-results" id="library-results"></div>
           </section>
 

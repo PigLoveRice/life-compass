@@ -10,7 +10,7 @@ const entries = [
   { topic: "自我", title: "我想重新理解自己", copy: "不神化成功，也不因失败把自己驱逐出生活。" },
 ];
 
-const topicOrder = ["全部", "开始", "阅读", "学习", "AI", "项目", "证据", "行动", "选择", "关系", "恢复", "自我", "工具"];
+const topicOrder = ["全部", "开始", "阅读", "学习", "AI", "项目", "证据", "行动", "选择", "关系", "恢复", "自我", "工具", "通用"];
 let knowledge = { chapters: [], sections: [] };
 let activeTopic = "全部";
 let lastMentorPrompt = "";
@@ -21,6 +21,7 @@ let lastDiscovery = null;
 let serviceInfo = null;
 let currentLibraryResults = [];
 let currentKnowledgeIndex = 0;
+let libraryViewMode = "graph";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -620,9 +621,87 @@ function renderFilters() {
   }));
 }
 
+function setLibraryView(mode) {
+  libraryViewMode = mode;
+  const graphMode = mode === "graph";
+  $("#knowledge-graph").hidden = !graphMode;
+  $("#library-results").hidden = graphMode;
+  $("#graph-view-button").setAttribute("aria-pressed", String(graphMode));
+  $("#list-view-button").setAttribute("aria-pressed", String(!graphMode));
+}
+
+function renderKnowledgeGraph(results) {
+  const svg = $("#knowledge-graph-svg");
+  const focus = $("#graph-focus");
+  if (!results.length) {
+    svg.innerHTML = `<text class="graph-empty" x="500" y="380" text-anchor="middle">没有可显示的文档关系</text>`;
+    focus.textContent = "换一个关键词或清除主题筛选后，关系图会重新生成。";
+    return;
+  }
+
+  const center = { x: 500, y: 380 };
+  const available = new Set(results.flatMap((item) => item.topics));
+  const topics = topicOrder.filter((topic) => topic !== "全部" && available.has(topic));
+  if (!topics.length) topics.push("通用");
+  const topicSet = new Set(topics);
+  const topicNodes = topics.map((topic, index) => {
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / topics.length;
+    return { topic, angle, x: center.x + Math.cos(angle) * 245, y: center.y + Math.sin(angle) * 245 };
+  });
+  const topicByName = new Map(topicNodes.map((node) => [node.topic, node]));
+  const grouped = new Map(topics.map((topic) => [topic, []]));
+  results.forEach((item, index) => {
+    const primary = item.topics.find((topic) => topicSet.has(topic)) || topics[0];
+    grouped.get(primary).push({ item, index });
+  });
+
+  const documentNodes = [];
+  for (const topicNode of topicNodes) {
+    const group = grouped.get(topicNode.topic);
+    group.forEach(({ item, index }, position) => {
+      const ring = Math.floor(position / 9);
+      const slot = position % 9;
+      const count = Math.min(9, group.length - ring * 9);
+      const angle = topicNode.angle + (slot - (count - 1) / 2) * .34 + ring * .12;
+      const radius = 52 + ring * 35;
+      const x = Math.max(28, Math.min(972, topicNode.x + Math.cos(angle) * radius));
+      const y = Math.max(28, Math.min(732, topicNode.y + Math.sin(angle) * radius));
+      documentNodes.push({ item, index, primary, x, y });
+    });
+  }
+
+  const hubEdges = topicNodes.map((node) => `<line class="graph-edge hub-edge" x1="${center.x}" y1="${center.y}" x2="${node.x.toFixed(1)}" y2="${node.y.toFixed(1)}" />`).join("");
+  const documentEdges = documentNodes.map((node) => node.item.topics.filter((topic) => topicSet.has(topic)).slice(0, 2).map((topic, topicIndex) => {
+    const target = topicByName.get(topic);
+    return `<line class="graph-edge document-edge ${topicIndex ? "secondary" : ""}" x1="${node.x.toFixed(1)}" y1="${node.y.toFixed(1)}" x2="${target.x.toFixed(1)}" y2="${target.y.toFixed(1)}" />`;
+  }).join("")).join("");
+  const topicMarkup = topicNodes.map((node) => {
+    const count = results.filter((item) => item.topics.includes(node.topic)).length;
+    return `<g class="graph-node graph-topic" data-graph-topic="${safe(node.topic)}" tabindex="0" role="button" aria-label="筛选主题：${safe(node.topic)}，${count} 篇文档" transform="translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})"><circle class="graph-hit" r="30"></circle><circle class="graph-topic-circle" r="19"></circle><text y="39" text-anchor="middle">${safe(node.topic)}</text><title>${safe(node.topic)} · ${count} 篇文档</title></g>`;
+  }).join("");
+  const documentMarkup = documentNodes.map((node) => `<g class="graph-node graph-document" data-graph-document="${node.index}" tabindex="0" role="button" aria-label="阅读完整文档：${safe(node.item.heading)}" transform="translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})"><circle class="graph-hit" r="30"></circle><circle class="graph-document-circle" r="7"></circle><title>${safe(node.item.heading)} · ${(node.item.topics || []).map((topic) => safe(topic)).join("、")}</title></g>`).join("");
+  svg.innerHTML = `<g class="graph-edges">${hubEdges}${documentEdges}</g><g class="graph-hub"><circle cx="${center.x}" cy="${center.y}" r="43"></circle><text x="${center.x}" y="${center.y - 3}" text-anchor="middle">人生指南</text><text class="hub-count" x="${center.x}" y="${center.y + 16}" text-anchor="middle">${results.length} 篇文档</text></g>${topicMarkup}${documentMarkup}`;
+
+  const resetFocus = () => { focus.textContent = "选择一个文档节点阅读整篇，选择主题节点筛选关系。"; };
+  $$('[data-graph-document]', svg).forEach((node) => {
+    const item = results[Number(node.dataset.graphDocument)];
+    const activate = () => openKnowledge(Number(node.dataset.graphDocument));
+    node.addEventListener("click", activate);
+    node.addEventListener("keydown", (event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); activate(); } });
+    node.addEventListener("mouseenter", () => { focus.textContent = `${item.heading} · ${item.topics.join(" / ")}`; });
+    node.addEventListener("focus", () => { focus.textContent = `${item.heading} · ${item.topics.join(" / ")}`; });
+    node.addEventListener("mouseleave", resetFocus);
+  });
+  $$('[data-graph-topic]', svg).forEach((node) => {
+    const activate = () => { activeTopic = node.dataset.graphTopic; renderFilters(); renderLibrary(); };
+    node.addEventListener("click", activate);
+    node.addEventListener("keydown", (event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); activate(); } });
+  });
+}
+
 function renderLibrary() {
   const query = $("#library-search").value.trim();
-  const results = searchSections(query, activeTopic, 30);
+  const results = searchSections(query, activeTopic, 120);
   currentLibraryResults = results;
   $("#result-count").textContent = `${results.length} 篇文档 · 知识库共 ${knowledge.documentCount || knowledge.sectionCount || 0} 篇完整文档`;
   $("#library-results").innerHTML = results.length ? results.map((item, index) => `
@@ -633,6 +712,8 @@ function renderLibrary() {
       <footer><span>${item.wordCount ? `约 ${item.wordCount.toLocaleString("zh-CN")} 字` : "完整收录"}${item.updated ? ` · 更新于 ${safe(item.updated)}` : ""}</span><button class="knowledge-open" type="button" data-knowledge-index="${index}" aria-label="阅读完整文档：${safe(item.heading)}">阅读整篇 <span aria-hidden="true">→</span></button></footer>
     </article>`).join("") : `<div class="empty-state"><h2>没有找到直接匹配的文档</h2><p>试试更短的词，例如“边界”“恢复”或“证据”，也可以清除主题筛选。</p></div>`;
   $$('[data-knowledge-index]').forEach((button) => button.addEventListener("click", () => openKnowledge(Number(button.dataset.knowledgeIndex))));
+  renderKnowledgeGraph(results);
+  setLibraryView(libraryViewMode);
 }
 
 function knowledgeSourceUrl(item) {
@@ -732,6 +813,8 @@ function bindEvents() {
     $("#menu-button").setAttribute("aria-expanded", String(open));
   });
   $("#library-search").addEventListener("input", renderLibrary);
+  $("#graph-view-button").addEventListener("click", () => setLibraryView("graph"));
+  $("#list-view-button").addEventListener("click", () => setLibraryView("list"));
   $("#knowledge-close").addEventListener("click", () => $("#knowledge-dialog").close());
   $("#knowledge-prev").addEventListener("click", () => openKnowledge(currentKnowledgeIndex - 1));
   $("#knowledge-next").addEventListener("click", () => openKnowledge(currentKnowledgeIndex + 1));
