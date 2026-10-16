@@ -10,7 +10,7 @@ const entries = [
   { topic: "自我", title: "我想重新理解自己", copy: "不神化成功，也不因失败把自己驱逐出生活。" },
 ];
 
-const topicOrder = ["全部", "开始", "学习", "AI", "项目", "证据", "行动", "选择", "关系", "恢复", "自我", "工具"];
+const topicOrder = ["全部", "开始", "阅读", "学习", "AI", "项目", "证据", "行动", "选择", "关系", "恢复", "自我", "工具"];
 let knowledge = { chapters: [], sections: [] };
 let activeTopic = "全部";
 let lastMentorPrompt = "";
@@ -183,7 +183,7 @@ async function loadHealth() {
     serviceInfo = await apiFetch("/api/health");
     serverReady = true;
     const actionCount = serviceInfo.libraries?.action?.sectionCount || 0;
-    $("#index-status").textContent = `${serviceInfo.knowledge.sectionCount} 个判断片段 · ${actionCount} 项具体行动 · ${serviceInfo.model}`;
+    $("#index-status").textContent = `${serviceInfo.knowledge.documentCount || serviceInfo.knowledge.sectionCount} 篇完整文档 · ${actionCount} 项具体行动 · ${serviceInfo.model}`;
     $("#model-badge").textContent = serviceInfo.model_configured ? serviceInfo.model : "本地教练";
     $("#server-model-description").textContent = serviceInfo.model_configured ? `服务器已配置 ${serviceInfo.model}` : "服务器未配置模型，将自动使用本地规则教练";
     syncModelLabels();
@@ -607,17 +607,14 @@ function renderLibrary() {
   const query = $("#library-search").value.trim();
   const results = searchSections(query, activeTopic, 30);
   currentLibraryResults = results;
-  $("#result-count").textContent = `${results.length} 条结果 · 来自 ${knowledge.chapterCount || 0} 个章节、${knowledge.sectionCount || 0} 个知识段落`;
-  $("#library-results").innerHTML = results.length ? results.map((item, index) => {
-    const preview = (item.fullContent || item.content).split(/\n\s*\n/).find(Boolean) || item.content;
-    return `
+  $("#result-count").textContent = `${results.length} 篇文档 · 知识库共 ${knowledge.documentCount || knowledge.sectionCount || 0} 篇完整文档`;
+  $("#library-results").innerHTML = results.length ? results.map((item, index) => `
     <article class="knowledge-card">
-      <header><span class="chapter">${safe(item.chapter)}</span><span class="tag-list">${item.topics.slice(0, 3).map((tag) => `<span class="tag">${safe(tag)}</span>`).join("")}</span></header>
+      <header><span class="chapter">完整文档</span><span class="tag-list">${item.topics.map((tag) => `<span class="tag">${safe(tag)}</span>`).join("")}</span></header>
       <h2>${safe(item.heading)}</h2>
-      <p>${safe(preview)}</p>
-      <footer><span>${safe(item.source)}</span><button class="knowledge-open" type="button" data-knowledge-index="${index}" aria-label="阅读全文：${safe(item.heading)}">阅读全文 <span aria-hidden="true">→</span></button></footer>
-    </article>`;
-  }).join("") : `<div class="empty-state"><h2>没有找到直接匹配的内容</h2><p>试试更短的词，例如“边界”“恢复”或“证据”，也可以清除主题筛选。</p></div>`;
+      <p>${safe(item.description || "这是一篇完整收录的原始文档，打开后可按原有标题层级连续阅读。")}</p>
+      <footer><span>${item.wordCount ? `约 ${item.wordCount.toLocaleString("zh-CN")} 字` : "完整收录"}${item.updated ? ` · 更新于 ${safe(item.updated)}` : ""}</span><button class="knowledge-open" type="button" data-knowledge-index="${index}" aria-label="阅读完整文档：${safe(item.heading)}">阅读整篇 <span aria-hidden="true">→</span></button></footer>
+    </article>`).join("") : `<div class="empty-state"><h2>没有找到直接匹配的文档</h2><p>试试更短的词，例如“边界”“恢复”或“证据”，也可以清除主题筛选。</p></div>`;
   $$('[data-knowledge-index]').forEach((button) => button.addEventListener("click", () => openKnowledge(Number(button.dataset.knowledgeIndex))));
 }
 
@@ -630,12 +627,28 @@ function openKnowledge(index) {
   const item = currentLibraryResults[index];
   if (!item) return;
   currentKnowledgeIndex = index;
-  $("#knowledge-reader-position").textContent = `搜索结果 ${index + 1} / ${currentLibraryResults.length}`;
-  $("#knowledge-reader-chapter").textContent = item.chapter;
+  $("#knowledge-reader-position").textContent = `完整文档 · 搜索结果 ${index + 1} / ${currentLibraryResults.length}`;
+  $("#knowledge-reader-chapter").textContent = item.wordCount ? `约 ${item.wordCount.toLocaleString("zh-CN")} 字` : "全文";
   $("#knowledge-reader-tags").innerHTML = item.topics.map((tag) => `<span class="tag">${safe(tag)}</span>`).join("");
   $("#knowledge-reader-title").textContent = item.heading;
-  const paragraphs = (item.fullContent || item.content).split(/\n\s*\n/).filter((paragraph) => paragraph.trim());
-  $("#knowledge-reader-body").innerHTML = paragraphs.map((paragraph) => `<p>${safe(paragraph)}</p>`).join("");
+  const blocks = item.blocks?.length ? item.blocks : (item.fullContent || item.content).split(/\n\s*\n/).filter(Boolean).map((text) => ({ type: "paragraph", text }));
+  let headingIndex = 0;
+  const toc = [];
+  $("#knowledge-reader-body").innerHTML = blocks.map((block) => {
+    if (block.type === "heading") {
+      const id = `reader-heading-${headingIndex++}`;
+      toc.push({ id, text: block.text, level: block.level });
+      const tag = block.level <= 2 ? "h3" : "h4";
+      return `<${tag} id="${id}">${safe(block.text)}</${tag}>`;
+    }
+    if (block.type === "list") return `<ul>${block.items.map((entry) => `<li>${safe(entry)}</li>`).join("")}</ul>`;
+    return `<p>${safe(block.text || "")}</p>`;
+  }).join("");
+  const tocNode = $("#knowledge-reader-toc");
+  tocNode.innerHTML = toc.length ? toc.map((entry) => `<button type="button" data-reader-target="${entry.id}" data-level="${entry.level}">${safe(entry.text)}</button>`).join("") : `<span>本文没有分节标题</span>`;
+  $$('[data-reader-target]', tocNode).forEach((button) => button.addEventListener("click", () => {
+    $(`#${button.dataset.readerTarget}`).scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
   $("#knowledge-source-link").href = knowledgeSourceUrl(item);
   $("#knowledge-prev").disabled = index === 0;
   $("#knowledge-next").disabled = index === currentLibraryResults.length - 1;
@@ -819,7 +832,7 @@ async function init() {
     const response = await fetch("./knowledge.json");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     knowledge = await response.json();
-    $("#index-status").textContent = `${knowledge.chapterCount} 章 · ${knowledge.sectionCount} 个知识段落已就绪`;
+    $("#index-status").textContent = `${knowledge.documentCount || knowledge.sectionCount} 篇完整文档已就绪`;
     $(".status-dot").classList.add("ready");
     renderFilters();
     renderLibrary();

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a compact searchable index from the Chinese book sources."""
+"""Build a document-level searchable index from the Chinese book sources."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$", re.MULTILINE)
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 PATH_TOPICS = {
+    "README.md": ["开始", "阅读"],
+    "book-downloads": ["工具", "阅读"],
     "part-0": ["开始", "阅读"],
     "part-1": ["学习", "英语"],
     "part-2": ["生活", "关系", "选择", "恢复"],
@@ -73,6 +75,71 @@ def readable(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def clean_inline(text: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"[`*_]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def document_blocks(text: str, title: str) -> list[dict]:
+    """Preserve a document's heading and paragraph hierarchy for the reader UI."""
+    text = re.sub(r"<!--([\s\S]*?)-->", "", text)
+    text = re.sub(r"```[^\n]*\n([\s\S]*?)```", r"\n\1\n", text)
+    blocks: list[dict] = []
+    paragraph: list[str] = []
+    list_items: list[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            value = clean_inline(" ".join(paragraph))
+            if value:
+                blocks.append({"type": "paragraph", "text": value})
+            paragraph.clear()
+
+    def flush_list() -> None:
+        if list_items:
+            blocks.append({"type": "list", "items": list_items.copy()})
+            list_items.clear()
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        heading_match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if heading_match:
+            flush_paragraph()
+            flush_list()
+            heading = clean_inline(heading_match.group(2))
+            if heading and not (len(heading_match.group(1)) == 1 and heading == title):
+                blocks.append({"type": "heading", "level": min(len(heading_match.group(1)), 4), "text": heading})
+            continue
+        if not line:
+            flush_paragraph()
+            flush_list()
+            continue
+        list_match = re.match(r"^(?:[-*+]\s+|\d+[.)]\s+)(.+)$", line)
+        if list_match:
+            flush_paragraph()
+            item = clean_inline(list_match.group(1))
+            if item:
+                list_items.append(item)
+            continue
+        if line.startswith("|") and line.endswith("|"):
+            flush_paragraph()
+            flush_list()
+            cells = [clean_inline(cell) for cell in line.strip("|").split("|")]
+            if cells and not all(re.fullmatch(r":?-{2,}:?", cell) for cell in cells):
+                blocks.append({"type": "paragraph", "text": " · ".join(cell for cell in cells if cell)})
+            continue
+        flush_list()
+        cleaned = clean_inline(re.sub(r"^>\s*", "", line))
+        if cleaned:
+            paragraph.append(cleaned)
+    flush_paragraph()
+    flush_list()
+    return blocks
+
+
 def stable_id(value: str) -> str:
     return hashlib.blake2s(value.encode("utf-8"), digest_size=5).hexdigest()
 
@@ -94,19 +161,22 @@ def topics_for(path: str, title: str, body: str) -> list[str]:
     for marker, values in PATH_TOPICS.items():
         if marker in path:
             topics.extend(values)
-    sample = f"{title} {body[:2500]}"
+    title_text = title.lower()
+    body_text = body.lower()
     for topic, words in KEYWORD_TOPICS.items():
-        if any(word.lower() in sample.lower() for word in words):
+        title_match = any(word.lower() in title_text for word in words)
+        body_score = sum(body_text.count(word.lower()) for word in words)
+        if title_match or body_score >= 3:
             topics.append(topic)
     return list(dict.fromkeys(topics))[:6] or ["通用"]
 
 
-def sections(path: Path, relative: str) -> tuple[dict, list[dict]]:
+def document(path: Path, relative: str) -> tuple[dict, dict]:
     raw = path.read_text(encoding="utf-8")
     meta, body = frontmatter(raw)
     matches = list(HEADING_RE.finditer(body))
     title = meta.get("title") or (plain(matches[0].group(2)) if matches else path.stem)
-    chapter_topics = topics_for(relative, title, body)
+    chapter_topics = topics_for(relative, f"{title} {meta.get('description', '')}", "")
     chapter = {
         "title": title,
         "description": meta.get("description", ""),
@@ -114,41 +184,25 @@ def sections(path: Path, relative: str) -> tuple[dict, list[dict]]:
         "source": relative,
         "topics": chapter_topics,
     }
-    output: list[dict] = []
-    for index, match in enumerate(matches):
-        if len(match.group(1)) == 1:
-            continue
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
-        section_body = body[match.end() : end]
-        full_content = readable(section_body)
-        content = plain(section_body)
-        if len(content) < 45:
-            continue
-        heading = plain(match.group(2))
-        output.append(
-            {
-                "id": f"{len(output) + 1}-{stable_id(relative + heading)}",
-                "chapter": title,
-                "heading": heading,
-                "content": content[:1800],
-                "fullContent": full_content,
-                "source": relative,
-                "topics": topics_for(relative, heading, content),
-            }
-        )
-    if not output:
-        output.append(
-            {
-                "id": f"1-{stable_id(relative)}",
-                "chapter": title,
-                "heading": title,
-                "content": plain(body)[:1800],
-                "fullContent": readable(body),
-                "source": relative,
-                "topics": chapter_topics,
-            }
-        )
-    return chapter, output
+    full_content = readable(body)
+    blocks = document_blocks(body, title)
+    outline = [block["text"] for block in blocks if block["type"] == "heading"]
+    entry = {
+        "id": f"doc-{stable_id(relative)}",
+        "library": "reflection",
+        "chapter": title,
+        "heading": title,
+        "description": meta.get("description", ""),
+        "content": plain(body),
+        "fullContent": full_content,
+        "blocks": blocks,
+        "outline": outline,
+        "wordCount": len(re.sub(r"\s+", "", full_content)),
+        "source": relative,
+        "updated": meta.get("updated", ""),
+        "topics": chapter_topics,
+    }
+    return chapter, entry
 
 
 def main() -> None:
@@ -166,14 +220,15 @@ def main() -> None:
         if not path.exists():
             missing.append(relative)
             continue
-        chapter, chapter_sections = sections(path, relative)
+        chapter, entry = document(path, relative)
         chapters.append(chapter)
-        entries.extend(chapter_sections)
+        entries.append(entry)
     payload = {
         "title": "人生进阶指南知识库",
         "source": "https://github.com/byoungd/up",
         "license": "CC BY-NC 4.0",
         "chapterCount": len(chapters),
+        "documentCount": len(entries),
         "sectionCount": len(entries),
         "chapters": chapters,
         "sections": entries,
@@ -181,7 +236,7 @@ def main() -> None:
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"Indexed {len(chapters)} chapters and {len(entries)} sections -> {args.output}")
+    print(f"Indexed {len(entries)} complete documents -> {args.output}")
 
 
 if __name__ == "__main__":

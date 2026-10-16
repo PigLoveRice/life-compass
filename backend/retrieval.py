@@ -52,7 +52,7 @@ class KnowledgeIndex:
     def __init__(self, path: Path, library: str = "reflection"):
         payload = json.loads(path.read_text(encoding="utf-8"))
         self.library = library
-        self.meta = {key: payload.get(key) for key in ("title", "source", "license", "revision", "chapterCount", "sectionCount") if payload.get(key) is not None}
+        self.meta = {key: payload.get(key) for key in ("title", "source", "license", "revision", "chapterCount", "documentCount", "sectionCount") if payload.get(key) is not None}
         self.sections = [{**item, "library": item.get("library", library)} for item in payload["sections"]]
         self.vectors = [vectorize(self.searchable(item)) for item in self.sections]
 
@@ -79,4 +79,9 @@ class KnowledgeIndex:
             if score > 0.03:
                 ranked.append((score, item))
         ranked.sort(key=lambda pair: pair[0], reverse=True)
-        return [{**item, "score": round(score, 4)} for score, item in ranked[:limit]]
+        results: list[dict] = []
+        for score, item in ranked[:limit]:
+            public_item = {key: value for key, value in item.items() if key not in {"blocks", "fullContent"}}
+            public_item["content"] = public_item.get("content", "")[:4000]
+            results.append({**public_item, "score": round(score, 4)})
+        return results

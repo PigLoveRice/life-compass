@@ -16,7 +16,7 @@ def test_health_and_hybrid_search(tmp_path: Path):
     with client(tmp_path) as api:
         health = api.get("/api/health")
         assert health.status_code == 200
-        assert health.json()["knowledge"]["sectionCount"] >= 800
+        assert health.json()["knowledge"]["documentCount"] >= 90
         results = api.get("/api/search", params={"q": "关系里的边界和同意", "topic": "关系"})
         assert results.status_code == 200
         assert results.json()["results"]
@@ -24,13 +24,14 @@ def test_health_and_hybrid_search(tmp_path: Path):
         assert health.json()["libraries"]["action"]["sectionCount"] >= 700
 
 
-def test_knowledge_index_keeps_complete_readable_sections():
+def test_knowledge_index_is_document_level_and_keeps_full_structure():
     payload = json.loads((ROOT / "web" / "knowledge.json").read_text(encoding="utf-8"))
-    sections = payload["sections"]
-    assert sections
-    assert all(item.get("fullContent") for item in sections)
-    assert any("\n\n" in item["fullContent"] for item in sections)
-    assert max(map(lambda item: len(item["fullContent"]), sections)) > 1800
+    documents = payload["sections"]
+    assert payload["documentCount"] == payload["chapterCount"] == len(documents)
+    assert len({item["source"] for item in documents}) == len(documents)
+    assert all(item.get("fullContent") and item.get("blocks") for item in documents)
+    assert any(any(block["type"] == "heading" for block in item["blocks"]) for item in documents)
+    assert max(map(lambda item: len(item["fullContent"]), documents)) > 5_000
 
 
 def test_dual_library_discovery_routes_to_action_and_reflection(tmp_path: Path):

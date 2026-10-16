@@ -242,7 +242,7 @@
 
           <section class="view" id="view-library" aria-labelledby="library-title">
             <div class="page-head library-head">
-              <div><p class="eyebrow">KNOWLEDGE ATLAS</p><h1 id="library-title">在整本书里寻找一个更好的问题</h1></div>
+              <div><p class="eyebrow">DOCUMENT ATLAS</p><h1 id="library-title">按完整文档理解一个问题</h1><p>搜索负责找到文档，阅读保留完整上下文。标签描述整篇文章，而不是其中一句话。</p></div>
               <label class="search-box" for="library-search"><span>搜索</span><input id="library-search" type="search" placeholder="边界、选择、AI、恢复…" /></label>
             </div>
             <div class="topic-filters" id="topic-filters" aria-label="主题筛选"></div>
@@ -296,7 +296,13 @@
           <div class="tag-list" id="knowledge-reader-tags"></div>
         </div>
         <h2 id="knowledge-reader-title"></h2>
-        <div class="knowledge-reader-body" id="knowledge-reader-body"></div>
+        <div class="knowledge-reader-layout">
+          <aside class="knowledge-reader-outline">
+            <p>本文目录</p>
+            <nav id="knowledge-reader-toc" aria-label="本文目录"></nav>
+          </aside>
+          <div class="knowledge-reader-body" id="knowledge-reader-body"></div>
+        </div>
         <footer class="knowledge-reader-footer">
           <a id="knowledge-source-link" target="_blank" rel="noopener noreferrer">在 GitHub 查看原始章节 ↗</a>
           <nav aria-label="阅读相邻搜索结果">

@@ -1,6 +1,6 @@
 [project]
 name = "life-compass"
-version = "0.6.0"
+version = "0.7.0"
 description = "Local-first reflective life coaching tool based on Life Level-up Guide"
 requires-python = ">=3.12"
 dependencies = [
