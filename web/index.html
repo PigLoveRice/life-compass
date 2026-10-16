@@ -34,6 +34,7 @@
           <button class="menu-button" id="menu-button" aria-label="打开导航" aria-expanded="false">目录</button>
           <p><span class="status-dot"></span><span id="index-status">正在载入知识库…</span></p>
           <div class="top-actions">
+            <button id="model-settings" type="button"><span id="active-model-label">本地教练</span> · 模型设置</button>
             <button id="export-data">导出浏览器简报</button>
             <time id="today-label"></time>
           </div>
@@ -267,6 +268,47 @@
         </footer>
       </div>
     </div>
+    <dialog class="model-dialog" id="model-dialog" aria-labelledby="model-dialog-title" aria-describedby="model-dialog-description">
+      <form id="model-form">
+        <header class="dialog-head">
+          <div><p class="eyebrow">MODEL BINDING</p><h2 id="model-dialog-title">选择对话使用的模型</h2></div>
+          <button class="dialog-close" id="model-close" type="button" aria-label="关闭模型设置">×</button>
+        </header>
+        <p id="model-dialog-description" class="dialog-description">知识检索、问题路由和安全中止始终在本地完成。模型只参与“深度对话”的理解与表达。</p>
+
+        <fieldset class="model-mode-list">
+          <legend>运行方式</legend>
+          <label><input type="radio" name="modelMode" value="local" /><span><b>本地规则教练</b><small>不调用外部模型，不产生 API 费用</small></span></label>
+          <label><input type="radio" name="modelMode" value="default" checked /><span><b>服务器默认</b><small id="server-model-description">跟随服务器环境变量；未配置时自动使用本地教练</small></span></label>
+          <label><input type="radio" name="modelMode" value="custom" /><span><b>当前浏览器自定义</b><small>为这个浏览器会话绑定兼容接口</small></span></label>
+        </fieldset>
+
+        <section class="custom-model-fields" id="custom-model-fields" hidden>
+          <div class="model-field-grid">
+            <div>
+              <label for="model-base-url">API 地址</label>
+              <input id="model-base-url" type="url" inputmode="url" autocomplete="url" placeholder="https://api.openai.com/v1" />
+            </div>
+            <div>
+              <label for="model-name">模型名称</label>
+              <input id="model-name" autocomplete="off" placeholder="gpt-4.1-mini" />
+            </div>
+          </div>
+          <label for="model-api-key">API Key</label>
+          <div class="secret-field">
+            <input id="model-api-key" type="password" autocomplete="off" placeholder="只在当前标签页会话中保存" />
+            <button id="toggle-model-key" type="button" aria-label="显示 API Key" aria-pressed="false">显示</button>
+          </div>
+          <p class="model-security-note">密钥保存在浏览器 <code>sessionStorage</code>，关闭标签页后清除；它会随对话请求临时发送到本地后端，但不会写入数据库或 Git。</p>
+        </section>
+
+        <p class="model-test-result" id="model-test-result" role="status"></p>
+        <footer class="dialog-actions">
+          <button class="secondary-action" id="test-model" type="button">测试连接</button>
+          <button class="primary-action" type="submit">保存并使用</button>
+        </footer>
+      </form>
+    </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./app.js" defer></script>
   </body>

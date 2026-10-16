@@ -1,4 +1,5 @@
 const STORAGE_KEY = "life-compass-records-v1";
+const MODEL_SETTINGS_KEY = "life-compass-model-v1";
 
 const entries = [
   { topic: "恢复", title: "我正在低谷，容量很小", copy: "先保护安全、睡眠、吃饭、求助和一个最小动作。" },
@@ -54,6 +55,101 @@ function toast(message) {
   toast.timer = setTimeout(() => node.classList.remove("show"), 2400);
 }
 
+function modelSettings() {
+  try {
+    return JSON.parse(sessionStorage.getItem(MODEL_SETTINGS_KEY) || '{"mode":"default"}');
+  } catch {
+    return { mode: "default" };
+  }
+}
+
+function selectedModelLabel(settings = modelSettings()) {
+  if (settings.mode === "local") return "本地教练";
+  if (settings.mode === "custom") return settings.model || "自定义模型";
+  return serviceInfo?.model_configured ? serviceInfo.model : "本地教练";
+}
+
+function syncModelLabels() {
+  const label = selectedModelLabel();
+  $("#active-model-label").textContent = label;
+  $("#model-badge").textContent = label;
+}
+
+function chatModelPayload() {
+  const settings = modelSettings();
+  if (settings.mode !== "custom") return { model_mode: settings.mode || "default" };
+  return {
+    model_mode: "custom",
+    custom_model: { base_url: settings.baseUrl, api_key: settings.apiKey, model: settings.model },
+  };
+}
+
+function updateModelFormState() {
+  const mode = $('input[name="modelMode"]:checked', $("#model-form"))?.value || "default";
+  const custom = mode === "custom";
+  $("#custom-model-fields").hidden = !custom;
+  [$("#model-base-url"), $("#model-name"), $("#model-api-key")].forEach((input) => { input.required = custom; });
+  $("#test-model").disabled = !custom;
+  if (!custom) $("#model-test-result").textContent = mode === "local" ? "所有回答将使用本地规则，不会调用外部模型。" : "对话将跟随服务器默认配置。";
+}
+
+function openModelDialog() {
+  const settings = modelSettings();
+  const form = $("#model-form");
+  const radio = $(`input[name="modelMode"][value="${settings.mode || "default"}"]`, form);
+  if (radio) radio.checked = true;
+  $("#model-base-url").value = settings.baseUrl || serviceInfo?.model_config?.base_url || "https://api.openai.com/v1";
+  $("#model-name").value = settings.model || serviceInfo?.model_config?.model || "gpt-4.1-mini";
+  $("#model-api-key").value = settings.apiKey || "";
+  $("#model-api-key").type = "password";
+  $("#toggle-model-key").textContent = "显示";
+  $("#toggle-model-key").setAttribute("aria-pressed", "false");
+  $("#model-test-result").className = "model-test-result";
+  updateModelFormState();
+  $("#model-dialog").showModal();
+}
+
+async function testCustomModel() {
+  const fields = [$("#model-base-url"), $("#model-name"), $("#model-api-key")];
+  if (!fields.every((input) => input.reportValidity())) return;
+  const button = $("#test-model");
+  const result = $("#model-test-result");
+  result.className = "model-test-result";
+  result.textContent = "正在向模型发送最小测试请求…";
+  setBusy(button, true, "测试中…");
+  try {
+    const response = await apiFetch("/api/model/test", { method: "POST", body: JSON.stringify({
+      base_url: $("#model-base-url").value.trim(),
+      model: $("#model-name").value.trim(),
+      api_key: $("#model-api-key").value.trim(),
+    }) });
+    result.className = "model-test-result success";
+    result.textContent = `连接成功：${response.model}`;
+  } catch (error) {
+    result.className = "model-test-result error";
+    result.textContent = `${error.message}。请检查地址、模型名、密钥和账户权限。`;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function saveModelSettings(event) {
+  event.preventDefault();
+  const mode = new FormData(event.currentTarget).get("modelMode") || "default";
+  const settings = { mode };
+  if (mode === "custom") {
+    const fields = [$("#model-base-url"), $("#model-name"), $("#model-api-key")];
+    if (!fields.every((input) => input.reportValidity())) return;
+    settings.baseUrl = $("#model-base-url").value.trim().replace(/\/+$/, "");
+    settings.model = $("#model-name").value.trim();
+    settings.apiKey = $("#model-api-key").value.trim();
+  }
+  sessionStorage.setItem(MODEL_SETTINGS_KEY, JSON.stringify(settings));
+  syncModelLabels();
+  $("#model-dialog").close();
+  toast(`对话已绑定：${selectedModelLabel(settings)}。 `);
+}
+
 function showView(name) {
   $$(".view").forEach((view) => view.classList.toggle("active", view.id === `view-${name}`));
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === name));
@@ -84,6 +180,8 @@ async function loadHealth() {
     const actionCount = serviceInfo.libraries?.action?.sectionCount || 0;
     $("#index-status").textContent = `${serviceInfo.knowledge.sectionCount} 个判断片段 · ${actionCount} 项具体行动 · ${serviceInfo.model}`;
     $("#model-badge").textContent = serviceInfo.model_configured ? serviceInfo.model : "本地教练";
+    $("#server-model-description").textContent = serviceInfo.model_configured ? `服务器已配置 ${serviceInfo.model}` : "服务器未配置模型，将自动使用本地规则教练";
+    syncModelLabels();
     $(".status-dot").classList.add("ready");
     await loadSessions();
   } catch {
@@ -262,7 +360,7 @@ async function sendChat(event) {
     const current = await apiFetch(`/api/sessions/${currentSessionId}`);
     renderMessages([...current.messages, { role: "user", content, provider: "" }]);
     input.value = "";
-    const answer = await apiFetch(`/api/sessions/${currentSessionId}/messages`, { method: "POST", body: JSON.stringify({ content, urgent: $("#chat-urgent").checked }) });
+    const answer = await apiFetch(`/api/sessions/${currentSessionId}/messages`, { method: "POST", body: JSON.stringify({ content, urgent: $("#chat-urgent").checked, ...chatModelPayload() }) });
     $("#chat-urgent").checked = false;
     renderMessages([...current.messages, { role: "user", content, provider: "" }, answer]);
     await loadSessions(currentSessionId);
@@ -433,6 +531,19 @@ function bindEvents() {
   });
   $("#library-search").addEventListener("input", renderLibrary);
   $("#discovery-form").addEventListener("submit", discoverNextStep);
+  $("#model-settings").addEventListener("click", openModelDialog);
+  $("#model-close").addEventListener("click", () => $("#model-dialog").close());
+  $("#model-form").addEventListener("submit", saveModelSettings);
+  $$('input[name="modelMode"]', $("#model-form")).forEach((radio) => radio.addEventListener("change", updateModelFormState));
+  $("#test-model").addEventListener("click", testCustomModel);
+  $("#toggle-model-key").addEventListener("click", (event) => {
+    const input = $("#model-api-key");
+    const reveal = input.type === "password";
+    input.type = reveal ? "text" : "password";
+    event.currentTarget.textContent = reveal ? "隐藏" : "显示";
+    event.currentTarget.setAttribute("aria-pressed", String(reveal));
+    event.currentTarget.setAttribute("aria-label", reveal ? "隐藏 API Key" : "显示 API Key");
+  });
   $("#chat-form").addEventListener("submit", sendChat);
   $("#new-session").addEventListener("click", async () => {
     if (!serverReady) { $("#chat-error").textContent = "后端未连接，无法创建持久对话。"; return; }

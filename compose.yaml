@@ -8,6 +8,7 @@ services:
       LIFE_COMPASS_LLM_BASE_URL: ${LIFE_COMPASS_LLM_BASE_URL:-https://api.openai.com/v1}
       LIFE_COMPASS_LLM_API_KEY: ${LIFE_COMPASS_LLM_API_KEY:-}
       LIFE_COMPASS_LLM_MODEL: ${LIFE_COMPASS_LLM_MODEL:-gpt-4.1-mini}
+      LIFE_COMPASS_ALLOW_PRIVATE_MODEL_HOSTS: ${LIFE_COMPASS_ALLOW_PRIVATE_MODEL_HOSTS:-0}
     volumes:
       - life_compass_data:/app/data
     restart: unless-stopped

@@ -7,14 +7,15 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 from .database import Database, now
-from .llm import complete, configured, model_name
+from .llm import complete, configured, model_name, public_model_config, test_connection
 from .retrieval import KnowledgeIndex
 
 
@@ -29,9 +30,17 @@ class SessionCreate(BaseModel):
     topic: str = Field(default="自我", max_length=30)
 
 
+class ModelOverride(BaseModel):
+    base_url: HttpUrl
+    api_key: str = Field(min_length=1, max_length=500)
+    model: str = Field(min_length=1, max_length=200, pattern=r"^[^\s]+$")
+
+
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=6000)
     urgent: bool = False
+    model_mode: Literal["default", "local", "custom"] = "default"
+    custom_model: ModelOverride | None = None
 
 
 class MemoryCreate(BaseModel):
@@ -117,7 +126,7 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
         database.init()
         yield
 
-    app = FastAPI(title="人生罗盘 API", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="人生罗盘 API", version="0.4.0", lifespan=lifespan)
     app.state.db = database
     app.state.index = index
     app.state.action_index = action_index
@@ -130,7 +139,14 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
                 "memories": conn.execute("SELECT COUNT(*) FROM memories WHERE active=1").fetchone()[0],
                 "open_tasks": conn.execute("SELECT COUNT(*) FROM tasks WHERE status!='已完成'").fetchone()[0],
             }
-        return {"status": "ok", "version": "0.3.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "knowledge": index.meta, "libraries": {"reflection": index.meta, "action": action_index.meta}, "stats": stats}
+        return {"status": "ok", "version": "0.4.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "model_config": public_model_config(), "knowledge": index.meta, "libraries": {"reflection": index.meta, "action": action_index.meta}, "stats": stats}
+
+    @app.post("/api/model/test")
+    async def probe_model(payload: ModelOverride) -> dict:
+        result = await test_connection(payload.model_dump(mode="json"))
+        if not result.content:
+            raise HTTPException(400, result.warning or "模型连接失败")
+        return {"status": "ok", "model": result.provider}
 
     @app.get("/api/search")
     def search(q: str = Query(min_length=1, max_length=500), topic: str | None = None, library: str = Query("reflection", pattern="^(reflection|action|both)$"), limit: int = Query(8, ge=1, le=30)) -> dict:
@@ -198,7 +214,15 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
         if urgent:
             answer, provider, references = safety_response(), "safety", []
         else:
-            result = await complete(history, references, memories)
+            if payload.model_mode == "local":
+                result = None
+            else:
+                if payload.model_mode == "custom" and not payload.custom_model:
+                    raise HTTPException(422, "请选择自定义模型并填写完整配置")
+                try:
+                    result = await complete(history, references, memories, payload.custom_model.model_dump(mode="json") if payload.model_mode == "custom" else None)
+                except ValueError as exc:
+                    raise HTTPException(422, str(exc)) from exc
             if result and result.content:
                 answer, provider, warning = result.content, result.provider, result.warning
             else:

@@ -2,6 +2,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+import backend.main as main_module
+from backend.llm import LLMResult
 from backend.main import ROOT, create_app
 
 
@@ -54,6 +56,34 @@ def test_local_multi_turn_session_and_citations(tmp_path: Path, monkeypatch):
         assert response.json()["citations"]
         detail = api.get(f"/api/sessions/{session['id']}").json()
         assert [item["role"] for item in detail["messages"]] == ["user", "assistant"]
+
+
+def test_browser_can_bind_and_test_custom_model(tmp_path: Path, monkeypatch):
+    captured = {}
+
+    async def fake_test(config):
+        captured.update(config)
+        return LLMResult(content="连接成功", provider=config["model"])
+
+    monkeypatch.setattr(main_module, "test_connection", fake_test)
+    with client(tmp_path) as api:
+        response = api.post("/api/model/test", json={
+            "base_url": "https://example.com/v1",
+            "api_key": "browser-session-key",
+            "model": "custom-model",
+        })
+        assert response.status_code == 200
+        assert response.json()["model"] == "custom-model"
+        assert captured["api_key"] == "browser-session-key"
+
+
+def test_local_mode_bypasses_server_model(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("LIFE_COMPASS_LLM_API_KEY", "server-key")
+    with client(tmp_path) as api:
+        session = api.post("/api/sessions", json={"title": "保持本地", "topic": "自我"}).json()
+        response = api.post(f"/api/sessions/{session['id']}/messages", json={"content": "帮我整理一下", "model_mode": "local"})
+        assert response.status_code == 201
+        assert response.json()["provider"] == "local"
 
 
 def test_safety_override_has_no_normal_recommendation(tmp_path: Path):
