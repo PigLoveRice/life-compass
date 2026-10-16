@@ -20,6 +20,8 @@ from .retrieval import KnowledgeIndex
 
 ROOT = Path(__file__).resolve().parents[1]
 DANGER_PATTERNS = re.compile(r"想死|自杀|轻生|伤害自己|伤害他人|无法保证.{0,4}安全|正在被.{0,4}(威胁|殴打|跟踪)|家暴")
+EMOTION_PATTERNS = re.compile(r"焦虑|害怕|迷茫|内耗|情绪|难过|痛苦|失败|自责|羞耻|孤独|崩溃|没动力|不想做|关系|纠结")
+PRACTICAL_PATTERNS = re.compile(r"需要什么|多少钱|流程|步骤|医院|看病|就医|吃药|戒烟|摔倒|摔跤|买房|租房|合同|辞职|离职|失业|收入|工伤|报警|账号|密码|保险|孩子|老人")
 
 
 class SessionCreate(BaseModel):
@@ -92,9 +94,22 @@ def local_response(message: str, references: list[dict], memories: list[dict]) -
 你愿意先告诉我：目前最确定的一个事实是什么？"""
 
 
+def route_problem(message: str, mode: str = "auto") -> dict:
+    if mode == "urgent" or DANGER_PATTERNS.search(message):
+        return {"mode": "urgent", "label": "急事", "primary": "action", "reason": "先处理安全、时限和不可逆风险，不展开普通分析。"}
+    if mode == "audit":
+        return {"mode": "audit", "label": "无事", "primary": "action", "reason": "从高收益、低成本的预防行动开始生活体检。"}
+    if mode == "emotional" or (EMOTION_PATTERNS.search(message) and not PRACTICAL_PATTERNS.search(message)):
+        return {"mode": "emotional", "label": "心事", "primary": "reflection", "reason": "先理解状态、事实和容量，再选择一个不会增加负担的行动。"}
+    if mode == "practical" or PRACTICAL_PATTERNS.search(message):
+        return {"mode": "practical", "label": "实事", "primary": "action", "reason": "优先查找有成本、收益和证据说明的具体做法。"}
+    return {"mode": "mixed", "label": "综合", "primary": "reflection", "reason": "同时查看判断框架和具体行动，再由你选择主线。"}
+
+
 def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, web_path: Path | None = None) -> FastAPI:
     database = Database(db_path or Path(os.getenv("LIFE_COMPASS_DB", ROOT / "data" / "life-compass.db")))
-    index = KnowledgeIndex(knowledge_path or ROOT / "web" / "knowledge.json")
+    index = KnowledgeIndex(knowledge_path or ROOT / "web" / "knowledge.json", "reflection")
+    action_index = KnowledgeIndex(ROOT / "web" / "action-knowledge.json", "action")
     static_dir = web_path or ROOT / "web"
 
     @asynccontextmanager
@@ -102,9 +117,10 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
         database.init()
         yield
 
-    app = FastAPI(title="人生罗盘 API", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="人生罗盘 API", version="0.3.0", lifespan=lifespan)
     app.state.db = database
     app.state.index = index
+    app.state.action_index = action_index
 
     @app.get("/api/health")
     def health() -> dict:
@@ -114,11 +130,32 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
                 "memories": conn.execute("SELECT COUNT(*) FROM memories WHERE active=1").fetchone()[0],
                 "open_tasks": conn.execute("SELECT COUNT(*) FROM tasks WHERE status!='已完成'").fetchone()[0],
             }
-        return {"status": "ok", "version": "0.2.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "knowledge": index.meta, "stats": stats}
+        return {"status": "ok", "version": "0.3.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "knowledge": index.meta, "libraries": {"reflection": index.meta, "action": action_index.meta}, "stats": stats}
 
     @app.get("/api/search")
-    def search(q: str = Query(min_length=1, max_length=500), topic: str | None = None, limit: int = Query(8, ge=1, le=30)) -> dict:
-        return {"query": q, "results": index.search(q, topic, limit)}
+    def search(q: str = Query(min_length=1, max_length=500), topic: str | None = None, library: str = Query("reflection", pattern="^(reflection|action|both)$"), limit: int = Query(8, ge=1, le=30)) -> dict:
+        if library == "reflection":
+            results = index.search(q, topic, limit)
+        elif library == "action":
+            results = action_index.search(q, topic, limit)
+        else:
+            results = sorted(index.search(q, topic, limit) + action_index.search(q, topic, limit), key=lambda item: item["score"], reverse=True)[:limit]
+        return {"query": q, "library": library, "results": results}
+
+    @app.get("/api/discover")
+    def discover(q: str = Query(default="生活体检", max_length=500), mode: str = Query("auto", pattern="^(auto|urgent|practical|emotional|audit)$"), limit: int = Query(4, ge=1, le=8)) -> dict:
+        route = route_problem(q, mode)
+        if route["mode"] == "urgent":
+            return {"query": q, "route": route, "safety": safety_response(), "reflection": [], "actions": []}
+        reflection = index.search(q, None, limit)
+        action_query = "情绪低落 压力 睡眠 求助" if route["mode"] == "emotional" else q
+        actions = action_index.search(action_query, None, limit)
+        if route["mode"] == "audit" and q.strip() in {"", "生活体检"}:
+            actions = sorted(
+                (item for item in action_index.sections if item.get("evidence") == "A" and item.get("ratio") in {"极高", "高"}),
+                key=lambda item: (item.get("ratio") != "极高", item["chapter"], item.get("number", 0)),
+            )[:limit]
+        return {"query": q, "route": route, "safety": "", "reflection": reflection, "actions": actions}
 
     @app.get("/api/sessions")
     def list_sessions() -> list[dict]:
@@ -153,7 +190,10 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
             history = database.records(conn.execute("SELECT * FROM messages WHERE session_id=? ORDER BY id", (session_id,)).fetchall())
             memories = database.records(conn.execute("SELECT * FROM memories WHERE active=1 ORDER BY updated_at DESC LIMIT 12").fetchall())
         urgent = payload.urgent or bool(DANGER_PATTERNS.search(payload.content))
-        references = index.search(payload.content, session["topic"], 5)
+        route = route_problem(payload.content)
+        reflection_refs = index.search(payload.content, session["topic"], 3)
+        action_refs = action_index.search(payload.content, None, 3)
+        references = (action_refs + reflection_refs if route["primary"] == "action" else reflection_refs + action_refs)[:5]
         warning = ""
         if urgent:
             answer, provider, references = safety_response(), "safety", []
@@ -165,7 +205,7 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
                 answer, provider = local_response(payload.content, references, memories), "local"
                 if result:
                     warning = result.warning
-        citations = [{key: item[key] for key in ("chapter", "heading", "source")} for item in references]
+        citations = [{key: item[key] for key in ("chapter", "heading", "source", "library")} for item in references]
         with database.connect() as conn:
             message_id = conn.execute(
                 "INSERT INTO messages(session_id,role,content,citations_json,provider,created_at) VALUES (?,?,?,?,?,?)",

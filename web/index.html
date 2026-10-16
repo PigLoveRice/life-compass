@@ -16,7 +16,7 @@
           <div><strong>人生罗盘</strong><small>LOCAL COMPASS</small></div>
         </div>
         <nav>
-          <button class="nav-item active" data-view="today"><span>01</span>今日罗盘</button>
+          <button class="nav-item active" data-view="today"><span>01</span>问题入口</button>
           <button class="nav-item" data-view="coach"><span>02</span>深度对话</button>
           <button class="nav-item" data-view="library"><span>03</span>知识地图</button>
           <button class="nav-item" data-view="actions"><span>04</span>行动与记忆</button>
@@ -24,9 +24,9 @@
         </nav>
         <div class="privacy-note">
           <b>私人工作区</b>
-          <p>你的填写内容只保存在当前浏览器，不会上传。</p>
+          <p>简报保存在浏览器；对话、行动和记忆保存在你运行的本地服务中。</p>
         </div>
-        <button class="clear-button" id="clear-data">清除我的本地记录</button>
+        <button class="clear-button" id="clear-data">清除浏览器简报</button>
       </aside>
 
       <div class="content-frame">
@@ -34,24 +34,57 @@
           <button class="menu-button" id="menu-button" aria-label="打开导航" aria-expanded="false">目录</button>
           <p><span class="status-dot"></span><span id="index-status">正在载入知识库…</span></p>
           <div class="top-actions">
-            <button id="export-data">导出记录</button>
+            <button id="export-data">导出浏览器简报</button>
             <time id="today-label"></time>
           </div>
         </header>
 
         <main id="main">
           <section class="view active" id="view-today" aria-labelledby="today-title">
-            <div class="hero">
-              <p class="eyebrow">TODAY · ONE HONEST STEP</p>
-              <h1 id="today-title">今天不必解决人生。<br /><em>先看清下一步。</em></h1>
-              <p class="hero-copy">从真实问题出发，留下一个事实、一个边界和一个能够完成的动作。</p>
-              <button class="primary-action" data-go="coach">开始一次梳理 <span aria-hidden="true">→</span></button>
+            <div class="hero compass-hero">
+              <p class="eyebrow">UNDERSTAND · FIND · DO · REVIEW</p>
+              <h1 id="today-title">把问题带来。<br /><em>带一个行动回去。</em></h1>
+              <p class="hero-copy">先判断这是急事、实事还是心事，再从两套指南中找到一个符合当前容量的下一步。</p>
+              <form class="discovery-form" id="discovery-form">
+                <fieldset class="mode-picker">
+                  <legend>这件事现在更接近哪一种？</legend>
+                  <label><input type="radio" name="mode" value="auto" checked /><span><b>自动判断</b><small>不确定时从这里开始</small></span></label>
+                  <label><input type="radio" name="mode" value="urgent" /><span><b>急事</b><small>危险、时限、不可逆风险</small></span></label>
+                  <label><input type="radio" name="mode" value="practical" /><span><b>实事</b><small>健康、钱、工作、家庭</small></span></label>
+                  <label><input type="radio" name="mode" value="emotional" /><span><b>心事</b><small>情绪、关系、低谷、选择</small></span></label>
+                  <label><input type="radio" name="mode" value="audit" /><span><b>无事</b><small>做一次预防性生活体检</small></span></label>
+                </fieldset>
+                <label for="discovery-query">现在发生了什么？</label>
+                <div class="discovery-input">
+                  <textarea id="discovery-query" rows="3" placeholder="例如：最近总想辞职，但又担心没有收入；或者选择“无事”看看最值得提前做什么。"></textarea>
+                  <button class="primary-action" id="discover-button" type="submit">找到下一步 <span aria-hidden="true">→</span></button>
+                </div>
+                <p class="form-error" id="discovery-error" role="alert"></p>
+              </form>
             </div>
+
+            <section class="discovery-results" id="discovery-results" aria-live="polite" hidden>
+              <header class="route-summary">
+                <div><p class="eyebrow">ROUTE</p><h2><span id="route-label">综合</span> · <span id="route-title">先理解，再行动</span></h2></div>
+                <p id="route-reason"></p>
+              </header>
+              <div class="safety-result" id="safety-result" hidden></div>
+              <div class="dual-results" id="dual-results">
+                <section class="result-lane reflection-lane" aria-labelledby="reflection-result-title">
+                  <div class="lane-head"><span>01</span><div><p>先理解</p><h2 id="reflection-result-title">这件事可能怎样看</h2></div></div>
+                  <div id="reflection-results"></div>
+                </section>
+                <section class="result-lane action-lane" aria-labelledby="action-result-title">
+                  <div class="lane-head"><span>02</span><div><p>现在能做</p><h2 id="action-result-title">选择一项具体行动</h2></div></div>
+                  <div id="action-results"></div>
+                </section>
+              </div>
+            </section>
 
             <section class="entry-section" aria-labelledby="entry-title">
               <div class="section-heading">
-                <div><p class="eyebrow">CHOOSE AN ENTRY</p><h2 id="entry-title">你现在更接近哪种处境？</h2></div>
-                <p>不需要按顺序学习，只选择今天真正相关的一条。</p>
+                <div><p class="eyebrow">OR START HERE</p><h2 id="entry-title">也可以从一种常见处境开始</h2></div>
+                <p>选择后会进入完整梳理，适合还不能用一句话讲清楚的时候。</p>
               </div>
               <div class="entry-grid" id="entry-grid"></div>
             </section>
@@ -229,7 +262,7 @@
         </main>
 
         <footer>
-          <p>方法与节选整理自韩先凯（离谱）《人生进阶指南》，内容遵循 CC BY-NC 4.0。</p>
+          <p>判断框架来自《人生进阶指南》（CC BY-NC 4.0）；行动库来自《高性价比人生指南》（CC BY 4.0）。</p>
           <p>它是一张地图，不是医疗、心理、法律或财务建议。</p>
         </footer>
       </div>

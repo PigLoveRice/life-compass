@@ -18,6 +18,30 @@ def test_health_and_hybrid_search(tmp_path: Path):
         assert results.status_code == 200
         assert results.json()["results"]
         assert "关系" in results.json()["results"][0]["topics"]
+        assert health.json()["libraries"]["action"]["sectionCount"] >= 700
+
+
+def test_dual_library_discovery_routes_to_action_and_reflection(tmp_path: Path):
+    with client(tmp_path) as api:
+        practical = api.get("/api/discover", params={"q": "我想戒烟，具体应该怎么做", "mode": "auto"})
+        assert practical.status_code == 200
+        assert practical.json()["route"]["primary"] == "action"
+        assert practical.json()["actions"]
+        assert practical.json()["actions"][0]["library"] == "action"
+
+        emotional = api.get("/api/discover", params={"q": "我最近很迷茫，也总觉得自己很失败", "mode": "auto"})
+        assert emotional.status_code == 200
+        assert emotional.json()["route"]["primary"] == "reflection"
+        assert emotional.json()["reflection"]
+
+
+def test_urgent_discovery_stops_normal_recommendations(tmp_path: Path):
+    with client(tmp_path) as api:
+        response = api.get("/api/discover", params={"q": "我现在想伤害自己", "mode": "auto"})
+        body = response.json()
+        assert body["route"]["mode"] == "urgent"
+        assert body["actions"] == []
+        assert "当地紧急服务" in body["safety"]
 
 
 def test_local_multi_turn_session_and_citations(tmp_path: Path, monkeypatch):

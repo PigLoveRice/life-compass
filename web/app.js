@@ -81,12 +81,111 @@ async function loadHealth() {
   try {
     serviceInfo = await apiFetch("/api/health");
     serverReady = true;
-    $("#index-status").textContent = `${serviceInfo.knowledge.chapterCount} 章 · ${serviceInfo.knowledge.sectionCount} 个知识段落 · ${serviceInfo.model}`;
+    const actionCount = serviceInfo.libraries?.action?.sectionCount || 0;
+    $("#index-status").textContent = `${serviceInfo.knowledge.sectionCount} 个判断片段 · ${actionCount} 项具体行动 · ${serviceInfo.model}`;
     $("#model-badge").textContent = serviceInfo.model_configured ? serviceInfo.model : "本地教练";
     $(".status-dot").classList.add("ready");
     await loadSessions();
   } catch {
     serverReady = false;
+  }
+}
+
+function reflectionCard(item) {
+  return `<article class="discovery-card reflection-card">
+    <div class="card-kicker"><span>判断框架</span><small>${safe(item.chapter)}</small></div>
+    <h3>${safe(item.heading)}</h3>
+    <p>${safe(item.content)}</p>
+    <button class="text-action" data-reflect-query="${safe(item.heading)}">查看相关内容 <span aria-hidden="true">→</span></button>
+  </article>`;
+}
+
+function actionCard(item) {
+  const tags = item.cost_tags || {};
+  return `<article class="discovery-card action-card">
+    <div class="card-kicker"><span>${safe(item.evidence || "未分级")} 级证据</span><small>性价比 ${safe(item.ratio || "未分级")}</small></div>
+    <h3>${safe(item.heading)}</h3>
+    <p class="plain-language">${safe(item.summary || item.content)}</p>
+    <dl class="action-facts">
+      <div><dt>钱</dt><dd>${safe(tags["钱"] || "—")}</dd></div>
+      <div><dt>时间</dt><dd>${safe(tags["时间"] || "—")}</dd></div>
+      <div><dt>毅力</dt><dd>${safe(tags["毅力"] || "—")}</dd></div>
+      <div><dt>收益</dt><dd>${safe(tags["收益"] || "—")}</dd></div>
+    </dl>
+    <details><summary>查看成本与适用边界</summary><p><b>成本：</b>${safe(item.cost || "原文未单列")}</p>${item.note ? `<p><b>备注：</b>${safe(item.note)}</p>` : ""}</details>
+    <button class="primary-action card-action" data-add-action="${safe(item.id)}" data-action-title="${safe(item.heading)}">加入我的行动</button>
+  </article>`;
+}
+
+function bindDiscoveryCards() {
+  $$('[data-reflect-query]').forEach((button) => button.addEventListener("click", () => {
+    $("#library-search").value = button.dataset.reflectQuery;
+    activeTopic = "全部";
+    renderFilters();
+    showView("library");
+  }));
+  $$('[data-add-action]').forEach((button) => button.addEventListener("click", async () => {
+    if (!serverReady) { toast("本地服务未连接，暂时无法保存行动。 "); return; }
+    setBusy(button, true, "保存中…");
+    try {
+      const due = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      await apiFetch("/api/tasks", { method: "POST", body: JSON.stringify({
+        title: button.dataset.actionTitle,
+        due_date: due,
+        evidence: "完成后写下一条可以核对的结果",
+        source_session_id: currentSessionId,
+      }) });
+      button.textContent = "已加入 · 7 天后复查";
+      button.disabled = true;
+      toast("已加入行动，并设置 7 天后的复查日期。 ");
+    } catch (error) {
+      toast(`保存失败：${error.message}`);
+      setBusy(button, false);
+    }
+  }));
+}
+
+async function discoverNextStep(event) {
+  event.preventDefault();
+  const mode = new FormData(event.currentTarget).get("mode") || "auto";
+  const input = $("#discovery-query");
+  const query = input.value.trim() || (mode === "audit" ? "生活体检" : "");
+  if (!query) {
+    $("#discovery-error").textContent = "请简单写下正在发生什么；如果只是想主动检查，请选择“无事”。";
+    input.focus();
+    return;
+  }
+  if (!serverReady) {
+    $("#discovery-error").textContent = "本地服务尚未连接，请先启动人生罗盘后端。";
+    return;
+  }
+  const button = $("#discover-button");
+  $("#discovery-error").textContent = "";
+  setBusy(button, true, "正在查两套指南…");
+  try {
+    const result = await apiFetch(`/api/discover?q=${encodeURIComponent(query)}&mode=${encodeURIComponent(mode)}&limit=4`);
+    $("#route-label").textContent = result.route.label;
+    $("#route-title").textContent = result.route.primary === "action" ? "先处理现实，再补充理解" : "先理解处境，再选择行动";
+    $("#route-reason").textContent = result.route.reason;
+    const safety = $("#safety-result");
+    const dual = $("#dual-results");
+    if (result.safety) {
+      safety.hidden = false;
+      dual.hidden = true;
+      safety.innerHTML = `<p class="eyebrow">SAFETY FIRST</p><h2>现在先保护安全</h2><div>${safe(result.safety)}</div>`;
+    } else {
+      safety.hidden = true;
+      dual.hidden = false;
+      $("#reflection-results").innerHTML = result.reflection.length ? result.reflection.map(reflectionCard).join("") : `<div class="lane-empty">没有足够贴近的判断框架。可以换一种说法，或直接查看右侧行动。</div>`;
+      $("#action-results").innerHTML = result.actions.length ? result.actions.map(actionCard).join("") : `<div class="lane-empty">没有找到足够贴近的行动。尝试写得更具体，例如地点、对象或正在发生的事情。</div>`;
+      bindDiscoveryCards();
+    }
+    $("#discovery-results").hidden = false;
+    $("#discovery-results").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    $("#discovery-error").textContent = `检索失败：${error.message}。请检查本地服务后重试。`;
+  } finally {
+    setBusy(button, false);
   }
 }
 
@@ -333,6 +432,7 @@ function bindEvents() {
     $("#menu-button").setAttribute("aria-expanded", String(open));
   });
   $("#library-search").addEventListener("input", renderLibrary);
+  $("#discovery-form").addEventListener("submit", discoverNextStep);
   $("#chat-form").addEventListener("submit", sendChat);
   $("#new-session").addEventListener("click", async () => {
     if (!serverReady) { $("#chat-error").textContent = "后端未连接，无法创建持久对话。"; return; }
