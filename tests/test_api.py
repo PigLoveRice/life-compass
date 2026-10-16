@@ -21,7 +21,9 @@ def test_health_and_hybrid_search(tmp_path: Path):
         assert results.status_code == 200
         assert results.json()["results"]
         assert "关系" in results.json()["results"][0]["topics"]
-        assert health.json()["libraries"]["action"]["sectionCount"] >= 700
+        action_meta = health.json()["libraries"]["action"]
+        assert action_meta["moduleCount"] == action_meta["chapterCount"] >= 30
+        assert action_meta["itemCount"] >= 700
 
 
 def test_knowledge_index_is_document_level_and_keeps_full_structure():
@@ -41,6 +43,8 @@ def test_dual_library_discovery_routes_to_action_and_reflection(tmp_path: Path):
         assert practical.json()["route"]["primary"] == "action"
         assert practical.json()["actions"]
         assert practical.json()["actions"][0]["library"] == "action"
+        assert practical.json()["actions"][0]["items"]
+        assert practical.json()["actions"][0]["itemCount"] == len(practical.json()["actions"][0]["items"])
 
         emotional = api.get("/api/discover", params={"q": "我最近很迷茫，也总觉得自己很失败", "mode": "auto"})
         assert emotional.status_code == 200

@@ -182,8 +182,9 @@ async function loadHealth() {
   try {
     serviceInfo = await apiFetch("/api/health");
     serverReady = true;
-    const actionCount = serviceInfo.libraries?.action?.sectionCount || 0;
-    $("#index-status").textContent = `${serviceInfo.knowledge.documentCount || serviceInfo.knowledge.sectionCount} 篇完整文档 · ${actionCount} 项具体行动 · ${serviceInfo.model}`;
+    const actionModules = serviceInfo.libraries?.action?.moduleCount || serviceInfo.libraries?.action?.sectionCount || 0;
+    const actionItems = serviceInfo.libraries?.action?.itemCount || 0;
+    $("#index-status").textContent = `${serviceInfo.knowledge.documentCount || serviceInfo.knowledge.sectionCount} 篇完整文档 · ${actionModules} 个行动模块${actionItems ? ` / ${actionItems} 项建议` : ""} · ${serviceInfo.model}`;
     $("#model-badge").textContent = serviceInfo.model_configured ? serviceInfo.model : "本地教练";
     $("#server-model-description").textContent = serviceInfo.model_configured ? `服务器已配置 ${serviceInfo.model}` : "服务器未配置模型，将自动使用本地规则教练";
     syncModelLabels();
@@ -309,7 +310,7 @@ async function saveDiscoveryAsIssue() {
       title: lastDiscovery.query.slice(0, 100), description: lastDiscovery.query,
       issue_type: lastDiscovery.route.label, priority: lastDiscovery.route.mode === "urgent" ? "紧急" : "普通",
       topic: $("#chat-topic").value || "自我", capacity: "一般",
-      next_action: firstAction?.heading || "", evidence: firstAction ? "完成后写下一条可以核对的结果" : "",
+      next_action: "", evidence: firstAction ? `先从“${firstAction.heading}”模块中选择一项行动` : "",
       review_date: due, assigned_to: "自己",
     }) });
     currentIssueId = issue.id;
@@ -332,20 +333,36 @@ function reflectionCard(item) {
   </article>`;
 }
 
-function actionCard(item) {
-  const tags = item.cost_tags || {};
-  return `<article class="discovery-card action-card">
-    <div class="card-kicker"><span>${safe(item.evidence || "未分级")} 级证据</span><small>性价比 ${safe(item.ratio || "未分级")}</small></div>
+function actionCard(item, moduleIndex) {
+  const evidence = Object.entries(item.evidenceCounts || {}).map(([level, count]) => `${safe(level)} 级 ${count} 项`).join(" · ");
+  const matched = new Set(item.matchedItemIds || []);
+  return `<article class="discovery-card action-card action-module-card">
+    <div class="card-kicker"><span>完整行动模块</span><small>${item.itemCount || item.items?.length || 0} 项建议</small></div>
     <h3>${safe(item.heading)}</h3>
-    <p class="plain-language">${safe(item.summary || item.content)}</p>
-    <dl class="action-facts">
-      <div><dt>钱</dt><dd>${safe(tags["钱"] || "—")}</dd></div>
-      <div><dt>时间</dt><dd>${safe(tags["时间"] || "—")}</dd></div>
-      <div><dt>毅力</dt><dd>${safe(tags["毅力"] || "—")}</dd></div>
-      <div><dt>收益</dt><dd>${safe(tags["收益"] || "—")}</dd></div>
-    </dl>
-    <details><summary>查看成本与适用边界</summary><p><b>成本：</b>${safe(item.cost || "原文未单列")}</p>${item.note ? `<p><b>备注：</b>${safe(item.note)}</p>` : ""}</details>
-    <button class="primary-action card-action" data-add-action="${safe(item.id)}" data-action-title="${safe(item.heading)}">加入我的行动</button>
+    <p class="module-summary">${safe(item.summary || "本模块汇集同一主题下的完整行动建议。")}</p>
+    <div class="module-meta"><span>${evidence || "证据等级见各条说明"}</span><span class="tag-list">${(item.topics || []).map((tag) => `<span class="tag">${safe(tag)}</span>`).join("")}</span></div>
+    <details class="action-module-details" ${moduleIndex === 0 ? "open" : ""}>
+      <summary>查看本模块全部 ${item.itemCount || item.items?.length || 0} 项建议</summary>
+      <div class="action-module-items">${(item.items || []).map((entry) => {
+        const tags = entry.cost_tags || {};
+        return `<article class="module-action ${matched.has(entry.id) ? "matched" : ""}">
+          <div class="module-action-number">${String(entry.number || "").padStart(2, "0")}</div>
+          <div class="module-action-copy">
+            ${matched.has(entry.id) ? `<span class="match-label">与你的问题相关</span>` : ""}
+            <h4>${safe(entry.heading)}</h4>
+            <p>${safe(entry.summary || "原文未提供简要说明。")}</p>
+            <dl class="action-facts compact">
+              <div><dt>证据</dt><dd>${safe(entry.evidence || "—")}</dd></div>
+              <div><dt>钱</dt><dd>${safe(tags["钱"] || "—")}</dd></div>
+              <div><dt>时间</dt><dd>${safe(tags["时间"] || "—")}</dd></div>
+              <div><dt>收益</dt><dd>${safe(tags["收益"] || "—")}</dd></div>
+            </dl>
+            <details class="action-item-details"><summary>完整说明、成本与边界</summary><p><b>成本：</b>${safe(entry.cost || "原文未单列")}</p><p><b>收益与依据：</b>${safe(entry.benefit || "原文未单列")}</p>${entry.note ? `<p><b>备注：</b>${safe(entry.note)}</p>` : ""}${entry.sources ? `<p><b>来源：</b>${safe(entry.sources)}</p>` : ""}</details>
+            <button class="primary-action card-action" data-add-action="${safe(entry.id)}" data-action-title="${safe(entry.heading)}">选择这项行动</button>
+          </div>
+        </article>`;
+      }).join("")}</div>
+    </details>
   </article>`;
 }
 

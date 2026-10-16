@@ -166,7 +166,7 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
         database.init()
         yield
 
-    app = FastAPI(title="人生 Issue API", version="0.7.0", lifespan=lifespan)
+    app = FastAPI(title="人生 Issue API", version="0.8.0", lifespan=lifespan)
     app.state.db = database
     app.state.index = index
     app.state.action_index = action_index
@@ -180,7 +180,7 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
                 "open_tasks": conn.execute("SELECT COUNT(*) FROM tasks WHERE status!='已完成'").fetchone()[0],
                 "open_issues": conn.execute("SELECT COUNT(*) FROM issues WHERE status NOT IN ('已解决','已归档')").fetchone()[0],
             }
-        return {"status": "ok", "version": "0.7.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "model_config": public_model_config(), "knowledge": index.meta, "libraries": {"reflection": index.meta, "action": action_index.meta}, "stats": stats}
+        return {"status": "ok", "version": "0.8.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "model_config": public_model_config(), "knowledge": index.meta, "libraries": {"reflection": index.meta, "action": action_index.meta}, "stats": stats}
 
     @app.post("/api/model/test")
     async def probe_model(payload: ModelOverride) -> dict:
@@ -209,8 +209,8 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
         actions = action_index.search(action_query, None, limit)
         if route["mode"] == "audit" and q.strip() in {"", "生活体检"}:
             actions = sorted(
-                (item for item in action_index.sections if item.get("evidence") == "A" and item.get("ratio") in {"极高", "高"}),
-                key=lambda item: (item.get("ratio") != "极高", item["chapter"], item.get("number", 0)),
+                action_index.sections,
+                key=lambda item: (-sum(1 for entry in item.get("items", []) if entry.get("evidence") == "A" and entry.get("ratio") in {"极高", "高"}), item["chapter"]),
             )[:limit]
         return {"query": q, "route": route, "safety": "", "reflection": reflection, "actions": actions}
 

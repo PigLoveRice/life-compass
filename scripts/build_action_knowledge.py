@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a searchable action index from eternity4719/HowToLiveBetter."""
+"""Build a chapter-level action index from eternity4719/HowToLiveBetter."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def revision(repo: Path) -> str:
     return result.stdout.strip()
 
 
-def parse_book(path: Path, chapter_number: int) -> tuple[dict, list[dict]]:
+def parse_book(path: Path, chapter_number: int) -> tuple[dict, dict]:
     lines = path.read_text(encoding="utf-8").splitlines()
     chapter_title = next((clean(line[2:]) for line in lines if line.startswith("# ")), path.stem)
     entries: list[dict] = []
@@ -114,7 +114,30 @@ def parse_book(path: Path, chapter_number: int) -> tuple[dict, list[dict]]:
             "source": f"book/{path.name}#第-{item['number']}-条",
             "topics": topics_for(context),
         })
-    return {"title": chapter_title, "source": f"book/{path.name}", "topics": topics_for(chapter_title)}, output
+    chapter_topics = list(dict.fromkeys(topic for item in output for topic in item["topics"]))[:6]
+    evidence_counts: dict[str, int] = {}
+    ratio_counts: dict[str, int] = {}
+    for item in output:
+        evidence_counts[item["evidence"]] = evidence_counts.get(item["evidence"], 0) + 1
+        ratio_counts[item["ratio"]] = ratio_counts.get(item["ratio"], 0) + 1
+    searchable_content = " ".join(
+        filter(None, [part for item in output for part in (item["heading"], item["summary"], item["cost"], item["benefit"], item["note"])])
+    )
+    module = {
+        "id": f"action-module-{chapter_number}",
+        "library": "action",
+        "chapter": chapter_title,
+        "heading": chapter_title,
+        "summary": f"完整收录本章 {len(output)} 条相互关联的行动建议，并保留每条建议的成本、收益、证据等级、来源和适用边界。",
+        "content": searchable_content[:4000],
+        "source": f"book/{path.name}",
+        "topics": chapter_topics or topics_for(chapter_title),
+        "itemCount": len(output),
+        "evidenceCounts": evidence_counts,
+        "ratioCounts": ratio_counts,
+        "items": output,
+    }
+    return {"title": chapter_title, "source": f"book/{path.name}", "topics": module["topics"], "itemCount": len(output)}, module
 
 
 def main() -> None:
@@ -128,22 +151,24 @@ def main() -> None:
     chapters: list[dict] = []
     entries: list[dict] = []
     for path in books:
-        chapter, items = parse_book(path, int(path.name[:2]))
+        chapter, module = parse_book(path, int(path.name[:2]))
         chapters.append(chapter)
-        entries.extend(items)
+        entries.append(module)
     payload = {
         "title": "高性价比人生指南行动库",
         "source": "https://github.com/eternity4719/HowToLiveBetter",
         "license": "CC BY 4.0",
         "revision": revision(args.source),
         "chapterCount": len(chapters),
+        "moduleCount": len(entries),
+        "itemCount": sum(entry["itemCount"] for entry in entries),
         "sectionCount": len(entries),
         "chapters": chapters,
         "sections": entries,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"Indexed {len(chapters)} chapters and {len(entries)} actions -> {args.output}")
+    print(f"Indexed {len(entries)} action modules and {sum(entry['itemCount'] for entry in entries)} nested actions -> {args.output}")
 
 
 if __name__ == "__main__":
