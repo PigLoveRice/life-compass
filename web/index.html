@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="从《人生进阶指南》整理而来的本地个人教练与知识检索工具。" />
-    <title>人生罗盘｜把判断还给自己</title>
+    <title>人生 Issue｜把问题变成下一步</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -13,10 +13,10 @@
       <aside class="sidebar" aria-label="主导航">
         <div class="brand">
           <span class="brand-seal" aria-hidden="true">向</span>
-          <div><strong>人生罗盘</strong><small>LOCAL COMPASS</small></div>
+          <div><strong>人生 Issue</strong><small>LIFE COMPASS</small></div>
         </div>
         <nav>
-          <button class="nav-item active" data-view="today"><span>01</span>问题入口</button>
+          <button class="nav-item active" data-view="today"><span>01</span>Issue 工作台</button>
           <button class="nav-item" data-view="coach"><span>02</span>深度对话</button>
           <button class="nav-item" data-view="library"><span>03</span>知识地图</button>
           <button class="nav-item" data-view="actions"><span>04</span>行动与记忆</button>
@@ -44,8 +44,8 @@
           <section class="view active" id="view-today" aria-labelledby="today-title">
             <div class="hero compass-hero">
               <p class="eyebrow">UNDERSTAND · FIND · DO · REVIEW</p>
-              <h1 id="today-title">把问题带来。<br /><em>带一个行动回去。</em></h1>
-              <p class="hero-copy">先判断这是急事、实事还是心事，再从两套指南中找到一个符合当前容量的下一步。</p>
+              <h1 id="today-title">把问题写成 Issue。<br /><em>带着证据往前走。</em></h1>
+              <p class="hero-copy">问题不是人格评价。记录事实、找到行动、约定复查；解决、接受或等待都可以是有效结果。</p>
               <form class="discovery-form" id="discovery-form">
                 <fieldset class="mode-picker">
                   <legend>这件事现在更接近哪一种？</legend>
@@ -64,10 +64,24 @@
               </form>
             </div>
 
+            <section class="issue-workbench" aria-labelledby="issue-board-title">
+              <header class="issue-board-head">
+                <div><p class="eyebrow">YOUR LIFE ISSUES</p><h2 id="issue-board-title">正在处理的人生问题</h2></div>
+                <label for="issue-filter">显示状态
+                  <select id="issue-filter"><option value="open">未关闭</option><option value="all">全部</option><option>待看清</option><option>可行动</option><option>行动中</option><option>等待条件</option><option>需要协助</option><option>暂时接受</option><option>已解决</option><option>已归档</option></select>
+                </label>
+              </header>
+              <div class="issue-metrics" id="issue-metrics">
+                <div><span>未关闭</span><b>0</b></div><div><span>等待复查</span><b>0</b></div><div><span>需要协助</span><b>0</b></div><div><span>已解决</span><b>0</b></div>
+              </div>
+              <div class="issue-list" id="issue-list"><div class="issue-empty">还没有人生 Issue。把上面的一个真实问题带进来，先找到下一步。</div></div>
+              <p class="form-error" id="issue-list-error" role="alert"></p>
+            </section>
+
             <section class="discovery-results" id="discovery-results" aria-live="polite" hidden>
               <header class="route-summary">
                 <div><p class="eyebrow">ROUTE</p><h2><span id="route-label">综合</span> · <span id="route-title">先理解，再行动</span></h2></div>
-                <p id="route-reason"></p>
+                <div class="route-actions"><p id="route-reason"></p><button class="route-save" id="save-discovery-issue" type="button">保存为人生 Issue</button></div>
               </header>
               <div class="safety-result" id="safety-result" hidden></div>
               <div class="dual-results" id="dual-results">
@@ -268,6 +282,36 @@
         </footer>
       </div>
     </div>
+    <dialog class="issue-dialog" id="issue-dialog" aria-labelledby="issue-dialog-title">
+      <form id="issue-form">
+        <input id="issue-id" type="hidden" />
+        <header class="dialog-head">
+          <div><p class="eyebrow">LIFE ISSUE</p><h2 id="issue-dialog-title">整理这个问题</h2></div>
+          <button class="dialog-close" id="issue-close" type="button" aria-label="关闭人生 Issue">×</button>
+        </header>
+        <div class="issue-form-grid">
+          <div class="wide"><label for="issue-title">Issue 标题</label><input id="issue-title" required maxlength="200" /></div>
+          <div><label for="issue-type">类型</label><select id="issue-type"><option>急事</option><option>实事</option><option>心事</option><option>无事</option><option>综合</option></select></div>
+          <div><label for="issue-priority">优先级</label><select id="issue-priority"><option>紧急</option><option>高</option><option selected>普通</option><option>低</option></select></div>
+          <div><label for="issue-status">状态</label><select id="issue-status"><option>待看清</option><option>可行动</option><option>行动中</option><option>等待条件</option><option>需要协助</option><option>暂时接受</option><option>已解决</option><option>已归档</option></select></div>
+          <div><label for="issue-review-date">复查日期</label><input id="issue-review-date" type="date" /></div>
+          <div class="wide"><label for="issue-description">最初的问题</label><textarea id="issue-description" rows="2" maxlength="6000"></textarea></div>
+          <div class="wide"><label for="issue-facts">已经确认的事实</label><textarea id="issue-facts" rows="3" maxlength="4000" placeholder="能指出日期、来源、行为或直接观察的内容"></textarea></div>
+          <div><label for="issue-interpretation">我的解释或担心</label><textarea id="issue-interpretation" rows="3" maxlength="4000"></textarea></div>
+          <div><label for="issue-boundary">必须守住的边界</label><textarea id="issue-boundary" rows="3" maxlength="2000"></textarea></div>
+          <div class="wide next-action-field"><label for="issue-next-action">当前下一步</label><textarea id="issue-next-action" rows="2" maxlength="1000" placeholder="尽量具体、可逆，并符合当前容量"></textarea></div>
+          <div><label for="issue-evidence">完成证据</label><input id="issue-evidence" maxlength="1000" placeholder="一页记录、一次反馈、一个文件…" /></div>
+          <div><label for="issue-assignee">由谁推进</label><input id="issue-assignee" maxlength="100" value="自己" /></div>
+        </div>
+        <p class="form-error" id="issue-form-error" role="alert"></p>
+        <footer class="dialog-actions issue-dialog-actions">
+          <button class="small-action danger" id="delete-issue" type="button">删除 Issue</button>
+          <span></span>
+          <button class="secondary-action" id="discuss-issue" type="button">继续对话</button>
+          <button class="primary-action" type="submit">保存 Issue</button>
+        </footer>
+      </form>
+    </dialog>
     <dialog class="model-dialog" id="model-dialog" aria-labelledby="model-dialog-title" aria-describedby="model-dialog-description">
       <form id="model-form">
         <header class="dialog-head">

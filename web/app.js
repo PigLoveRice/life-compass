@@ -16,6 +16,8 @@ let activeTopic = "全部";
 let lastMentorPrompt = "";
 let serverReady = false;
 let currentSessionId = null;
+let currentIssueId = null;
+let lastDiscovery = null;
 let serviceInfo = null;
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -159,6 +161,7 @@ function showView(name) {
   if (name === "library") renderLibrary();
   if (name === "review") renderRecords();
   if (name === "actions") loadActions();
+  if (name === "today") loadIssues();
 }
 
 function setBusy(button, busy, label = "处理中…") {
@@ -183,9 +186,138 @@ async function loadHealth() {
     $("#server-model-description").textContent = serviceInfo.model_configured ? `服务器已配置 ${serviceInfo.model}` : "服务器未配置模型，将自动使用本地规则教练";
     syncModelLabels();
     $(".status-dot").classList.add("ready");
-    await loadSessions();
+    await Promise.all([loadSessions(), loadIssues()]);
   } catch {
     serverReady = false;
+  }
+}
+
+function issueCard(item) {
+  const closed = ["已解决", "已归档"].includes(item.status);
+  return `<article class="issue-row" data-priority="${safe(item.priority)}" data-closed="${closed}">
+    <div class="issue-state"><b>${safe(item.status)}</b><small>${safe(item.issue_type)} · ${safe(item.priority)}</small></div>
+    <div class="issue-copy"><h3>${safe(item.title)}</h3><p>${safe(item.description || item.facts || "还没有补充问题背景。")}</p></div>
+    <div class="issue-next"><span>NEXT ACTION</span><p>${safe(item.next_action || "还没有确定下一步")}</p><small>${item.review_date ? `复查 ${safe(item.review_date)}` : "尚未设置复查日期"}</small></div>
+    <button class="issue-open" type="button" data-open-issue="${safe(item.id)}">打开 Issue</button>
+  </article>`;
+}
+
+async function loadIssues() {
+  if (!serverReady) return;
+  try {
+    const items = await apiFetch("/api/issues?limit=200");
+    const openItems = items.filter((item) => !["已解决", "已归档"].includes(item.status));
+    const values = [openItems.length, openItems.filter((item) => item.review_date).length, items.filter((item) => item.status === "需要协助").length, items.filter((item) => item.status === "已解决").length];
+    $$("#issue-metrics b").forEach((node, index) => { node.textContent = values[index] || 0; });
+    const filter = $("#issue-filter")?.value || "open";
+    const visible = filter === "all" ? items : filter === "open" ? openItems : items.filter((item) => item.status === filter);
+    $("#issue-list").innerHTML = visible.length ? visible.map(issueCard).join("") : `<div class="issue-empty">${items.length ? "这个状态下还没有 Issue。" : "还没有人生 Issue。把上面的一个真实问题带进来，先找到下一步。"}</div>`;
+    $$('[data-open-issue]').forEach((button) => button.addEventListener("click", () => openIssue(button.dataset.openIssue)));
+    $("#issue-list-error").textContent = "";
+  } catch (error) {
+    $("#issue-list-error").textContent = `无法载入人生 Issue：${error.message}`;
+  }
+}
+
+async function openIssue(issueId) {
+  try {
+    const item = await apiFetch(`/api/issues/${issueId}`);
+    currentIssueId = issueId;
+    $("#issue-id").value = item.id;
+    $("#issue-title").value = item.title;
+    $("#issue-type").value = item.issue_type;
+    $("#issue-priority").value = item.priority;
+    $("#issue-status").value = item.status;
+    $("#issue-review-date").value = item.review_date || "";
+    $("#issue-description").value = item.description || "";
+    $("#issue-facts").value = item.facts || "";
+    $("#issue-interpretation").value = item.interpretation || "";
+    $("#issue-boundary").value = item.boundary || "";
+    $("#issue-next-action").value = item.next_action || "";
+    $("#issue-evidence").value = item.evidence || "";
+    $("#issue-assignee").value = item.assigned_to || "自己";
+    $("#issue-form-error").textContent = "";
+    $("#issue-dialog").showModal();
+  } catch (error) {
+    toast(`无法打开 Issue：${error.message}`);
+  }
+}
+
+async function saveIssue(event) {
+  event.preventDefault();
+  const issueId = $("#issue-id").value;
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  const payload = {
+    title: $("#issue-title").value.trim(), issue_type: $("#issue-type").value,
+    priority: $("#issue-priority").value, status: $("#issue-status").value,
+    review_date: $("#issue-review-date").value || null, description: $("#issue-description").value.trim(),
+    facts: $("#issue-facts").value.trim(), interpretation: $("#issue-interpretation").value.trim(),
+    boundary: $("#issue-boundary").value.trim(), next_action: $("#issue-next-action").value.trim(),
+    evidence: $("#issue-evidence").value.trim(), assigned_to: $("#issue-assignee").value.trim() || "自己",
+  };
+  setBusy(button, true, "保存中…");
+  try {
+    await apiFetch(`/api/issues/${issueId}`, { method: "PATCH", body: JSON.stringify(payload) });
+    $("#issue-dialog").close();
+    await loadIssues();
+    toast("人生 Issue 已更新。 ");
+  } catch (error) {
+    $("#issue-form-error").textContent = `保存失败：${error.message}`;
+  } finally { setBusy(button, false); }
+}
+
+async function deleteCurrentIssue() {
+  const issueId = $("#issue-id").value;
+  if (!issueId || !window.confirm("确认删除这个人生 Issue？关联的行动和对话会保留，但不再归属于它。")) return;
+  const button = $("#delete-issue");
+  setBusy(button, true, "删除中…");
+  try {
+    await apiFetch(`/api/issues/${issueId}`, { method: "DELETE" });
+    currentIssueId = null;
+    setBusy(button, false);
+    $("#issue-dialog").close();
+    await loadIssues();
+    toast("人生 Issue 已删除。 ");
+  } catch (error) {
+    $("#issue-form-error").textContent = `删除失败：${error.message}`;
+    setBusy(button, false);
+  }
+}
+
+function discussCurrentIssue() {
+  currentIssueId = $("#issue-id").value;
+  currentSessionId = null;
+  const title = $("#issue-title").value.trim();
+  const description = $("#issue-description").value.trim();
+  $("#issue-dialog").close();
+  showView("coach");
+  $("#chat-title").textContent = `围绕 Issue：${title}`;
+  $("#chat-input").value = `我想继续梳理这个人生 Issue：${title}${description ? `\n当前背景：${description}` : ""}`;
+  $("#chat-input").focus();
+}
+
+async function saveDiscoveryAsIssue() {
+  if (!lastDiscovery) return;
+  const button = $("#save-discovery-issue");
+  setBusy(button, true, "保存中…");
+  const firstAction = lastDiscovery.actions?.[0];
+  const due = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  try {
+    const issue = await apiFetch("/api/issues", { method: "POST", body: JSON.stringify({
+      title: lastDiscovery.query.slice(0, 100), description: lastDiscovery.query,
+      issue_type: lastDiscovery.route.label, priority: lastDiscovery.route.mode === "urgent" ? "紧急" : "普通",
+      topic: $("#chat-topic").value || "自我", capacity: "一般",
+      next_action: firstAction?.heading || "", evidence: firstAction ? "完成后写下一条可以核对的结果" : "",
+      review_date: due, assigned_to: "自己",
+    }) });
+    currentIssueId = issue.id;
+    button.textContent = "已保存为 Issue";
+    button.disabled = true;
+    await loadIssues();
+    toast("问题已进入 Issue 工作台，后续行动会关联到它。 ");
+  } catch (error) {
+    toast(`保存失败：${error.message}`);
+    setBusy(button, false);
   }
 }
 
@@ -232,7 +364,12 @@ function bindDiscoveryCards() {
         due_date: due,
         evidence: "完成后写下一条可以核对的结果",
         source_session_id: currentSessionId,
+        issue_id: currentIssueId,
       }) });
+      if (currentIssueId) {
+        await apiFetch(`/api/issues/${currentIssueId}`, { method: "PATCH", body: JSON.stringify({ status: "行动中", next_action: button.dataset.actionTitle, evidence: "完成后写下一条可以核对的结果", review_date: due }) });
+        await loadIssues();
+      }
       button.textContent = "已加入 · 7 天后复查";
       button.disabled = true;
       toast("已加入行动，并设置 7 天后的复查日期。 ");
@@ -262,6 +399,10 @@ async function discoverNextStep(event) {
   setBusy(button, true, "正在查两套指南…");
   try {
     const result = await apiFetch(`/api/discover?q=${encodeURIComponent(query)}&mode=${encodeURIComponent(mode)}&limit=4`);
+    lastDiscovery = result;
+    currentIssueId = null;
+    $("#save-discovery-issue").disabled = false;
+    $("#save-discovery-issue").textContent = "保存为人生 Issue";
     $("#route-label").textContent = result.route.label;
     $("#route-title").textContent = result.route.primary === "action" ? "先处理现实，再补充理解" : "先理解处境，再选择行动";
     $("#route-reason").textContent = result.route.reason;
@@ -325,6 +466,7 @@ async function openSession(sessionId) {
   try {
     const item = await apiFetch(`/api/sessions/${sessionId}`);
     currentSessionId = sessionId;
+    currentIssueId = item.issue_id || currentIssueId;
     $("#chat-title").textContent = item.title;
     $("#chat-topic").value = item.topic;
     renderMessages(item.messages);
@@ -335,7 +477,7 @@ async function openSession(sessionId) {
 }
 
 async function createSession(title = "新的梳理") {
-  const item = await apiFetch("/api/sessions", { method: "POST", body: JSON.stringify({ title, topic: $("#chat-topic").value }) });
+  const item = await apiFetch("/api/sessions", { method: "POST", body: JSON.stringify({ title, topic: $("#chat-topic").value, issue_id: currentIssueId }) });
   currentSessionId = item.id;
   $("#chat-title").textContent = item.title;
   renderMessages([]);
@@ -531,6 +673,12 @@ function bindEvents() {
   });
   $("#library-search").addEventListener("input", renderLibrary);
   $("#discovery-form").addEventListener("submit", discoverNextStep);
+  $("#save-discovery-issue").addEventListener("click", saveDiscoveryAsIssue);
+  $("#issue-filter").addEventListener("change", loadIssues);
+  $("#issue-close").addEventListener("click", () => $("#issue-dialog").close());
+  $("#issue-form").addEventListener("submit", saveIssue);
+  $("#delete-issue").addEventListener("click", deleteCurrentIssue);
+  $("#discuss-issue").addEventListener("click", discussCurrentIssue);
   $("#model-settings").addEventListener("click", openModelDialog);
   $("#model-close").addEventListener("click", () => $("#model-dialog").close());
   $("#model-form").addEventListener("submit", saveModelSettings);
@@ -548,6 +696,7 @@ function bindEvents() {
   $("#new-session").addEventListener("click", async () => {
     if (!serverReady) { $("#chat-error").textContent = "后端未连接，无法创建持久对话。"; return; }
     try {
+      currentIssueId = null;
       await createSession();
       $("#chat-input").focus();
     } catch (error) {
@@ -573,7 +722,7 @@ function bindEvents() {
     $("#task-error").textContent = "";
     setBusy(button, true, "保存中…");
     try {
-      await apiFetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: $("#task-title").value.trim(), due_date: $("#task-due").value || null, evidence: $("#task-evidence").value.trim(), source_session_id: currentSessionId }) });
+      await apiFetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: $("#task-title").value.trim(), due_date: $("#task-due").value || null, evidence: $("#task-evidence").value.trim(), source_session_id: currentSessionId, issue_id: currentIssueId }) });
       event.currentTarget.reset();
       await loadActions();
       toast("行动已保存，记得带着证据回来。 ");

@@ -110,3 +110,34 @@ def test_memory_task_and_review_lifecycle(tmp_path: Path):
         review = api.post("/api/reviews", json={"changed_judgment": "成本比想象更高", "next_experiment": "缩小范围"})
         assert review.status_code == 201
         assert len(api.get("/api/reviews").json()) == 1
+
+
+def test_life_issue_lifecycle_and_linked_work(tmp_path: Path):
+    with client(tmp_path) as api:
+        created = api.post("/api/issues", json={
+            "title": "是否应该离开当前工作",
+            "description": "收入稳定，但长期没有恢复时间",
+            "issue_type": "实事",
+            "priority": "高",
+            "next_action": "核对三个月现金流",
+            "evidence": "一页现金流表",
+            "review_date": "2026-10-23",
+        })
+        assert created.status_code == 201
+        issue = created.json()
+        assert issue["status"] == "可行动"
+
+        session = api.post("/api/sessions", json={"title": "工作选择", "topic": "选择", "issue_id": issue["id"]})
+        assert session.status_code == 201
+        task = api.post("/api/tasks", json={"title": "核对三个月现金流", "issue_id": issue["id"]})
+        assert task.status_code == 201
+
+        updated = api.patch(f"/api/issues/{issue['id']}", json={"status": "行动中", "facts": "已确认每月固定支出"})
+        assert updated.json()["status"] == "行动中"
+        detail = api.get(f"/api/issues/{issue['id']}").json()
+        assert len(detail["sessions"]) == 1
+        assert len(detail["tasks"]) == 1
+        assert api.get("/api/health").json()["stats"]["open_issues"] == 1
+
+        assert api.delete(f"/api/issues/{issue['id']}").status_code == 204
+        assert api.get("/api/issues").json() == []

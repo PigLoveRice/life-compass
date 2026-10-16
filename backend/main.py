@@ -28,6 +28,45 @@ PRACTICAL_PATTERNS = re.compile(r"需要什么|多少钱|流程|步骤|医院|�
 class SessionCreate(BaseModel):
     title: str = Field(min_length=2, max_length=160)
     topic: str = Field(default="自我", max_length=30)
+    issue_id: str | None = Field(default=None, max_length=64)
+
+
+IssueType = Literal["急事", "实事", "心事", "无事", "综合"]
+IssuePriority = Literal["紧急", "高", "普通", "低"]
+IssueStatus = Literal["待看清", "可行动", "行动中", "等待条件", "需要协助", "暂时接受", "已解决", "已归档"]
+
+
+class IssueCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=200)
+    description: str = Field(default="", max_length=6000)
+    issue_type: IssueType = "综合"
+    priority: IssuePriority = "普通"
+    topic: str = Field(default="自我", max_length=30)
+    capacity: str = Field(default="一般", max_length=30)
+    facts: str = Field(default="", max_length=4000)
+    interpretation: str = Field(default="", max_length=4000)
+    boundary: str = Field(default="", max_length=2000)
+    next_action: str = Field(default="", max_length=1000)
+    evidence: str = Field(default="", max_length=1000)
+    review_date: date | None = None
+    assigned_to: str = Field(default="自己", max_length=100)
+
+
+class IssuePatch(BaseModel):
+    title: str | None = Field(default=None, min_length=2, max_length=200)
+    description: str | None = Field(default=None, max_length=6000)
+    issue_type: IssueType | None = None
+    priority: IssuePriority | None = None
+    status: IssueStatus | None = None
+    topic: str | None = Field(default=None, max_length=30)
+    capacity: str | None = Field(default=None, max_length=30)
+    facts: str | None = Field(default=None, max_length=4000)
+    interpretation: str | None = Field(default=None, max_length=4000)
+    boundary: str | None = Field(default=None, max_length=2000)
+    next_action: str | None = Field(default=None, max_length=1000)
+    evidence: str | None = Field(default=None, max_length=1000)
+    review_date: date | None = None
+    assigned_to: str | None = Field(default=None, max_length=100)
 
 
 class ModelOverride(BaseModel):
@@ -54,6 +93,7 @@ class TaskCreate(BaseModel):
     due_date: date | None = None
     evidence: str = Field(default="", max_length=1000)
     source_session_id: str | None = None
+    issue_id: str | None = Field(default=None, max_length=64)
 
 
 class TaskPatch(BaseModel):
@@ -126,7 +166,7 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
         database.init()
         yield
 
-    app = FastAPI(title="人生罗盘 API", version="0.4.0", lifespan=lifespan)
+    app = FastAPI(title="人生 Issue API", version="0.5.0", lifespan=lifespan)
     app.state.db = database
     app.state.index = index
     app.state.action_index = action_index
@@ -138,8 +178,9 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
                 "sessions": conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0],
                 "memories": conn.execute("SELECT COUNT(*) FROM memories WHERE active=1").fetchone()[0],
                 "open_tasks": conn.execute("SELECT COUNT(*) FROM tasks WHERE status!='已完成'").fetchone()[0],
+                "open_issues": conn.execute("SELECT COUNT(*) FROM issues WHERE status NOT IN ('已解决','已归档')").fetchone()[0],
             }
-        return {"status": "ok", "version": "0.4.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "model_config": public_model_config(), "knowledge": index.meta, "libraries": {"reflection": index.meta, "action": action_index.meta}, "stats": stats}
+        return {"status": "ok", "version": "0.5.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "model_config": public_model_config(), "knowledge": index.meta, "libraries": {"reflection": index.meta, "action": action_index.meta}, "stats": stats}
 
     @app.post("/api/model/test")
     async def probe_model(payload: ModelOverride) -> dict:
@@ -183,8 +224,66 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
         session_id = uuid.uuid4().hex
         timestamp = now()
         with database.connect() as conn:
-            conn.execute("INSERT INTO sessions(id,title,topic,created_at,updated_at) VALUES (?,?,?,?,?)", (session_id, payload.title, payload.topic, timestamp, timestamp))
+            if payload.issue_id and not conn.execute("SELECT id FROM issues WHERE id=?", (payload.issue_id,)).fetchone():
+                raise HTTPException(404, "人生 Issue 不存在")
+            conn.execute("INSERT INTO sessions(id,title,topic,issue_id,created_at,updated_at) VALUES (?,?,?,?,?,?)", (session_id, payload.title, payload.topic, payload.issue_id, timestamp, timestamp))
             return database.record(conn.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone())
+
+    @app.get("/api/issues")
+    def list_issues(status: str | None = None, limit: int = Query(100, ge=1, le=300)) -> list[dict]:
+        with database.connect() as conn:
+            if status:
+                rows = conn.execute("SELECT * FROM issues WHERE status=? ORDER BY COALESCE(review_date,'9999-12-31'),updated_at DESC LIMIT ?", (status, limit)).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM issues ORDER BY status IN ('已解决','已归档'),COALESCE(review_date,'9999-12-31'),updated_at DESC LIMIT ?", (limit,)).fetchall()
+            return database.records(rows)
+
+    @app.post("/api/issues", status_code=201)
+    def create_issue(payload: IssueCreate) -> dict:
+        issue_id = uuid.uuid4().hex
+        timestamp = now()
+        values = payload.model_dump(mode="json")
+        review_date = values.pop("review_date")
+        status = "可行动" if payload.next_action else "待看清"
+        with database.connect() as conn:
+            conn.execute(
+                """INSERT INTO issues(id,title,description,issue_type,priority,status,topic,capacity,facts,interpretation,boundary,next_action,evidence,review_date,assigned_to,created_at,updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (issue_id, values["title"], values["description"], values["issue_type"], values["priority"], status, values["topic"], values["capacity"], values["facts"], values["interpretation"], values["boundary"], values["next_action"], values["evidence"], review_date, values["assigned_to"], timestamp, timestamp),
+            )
+            return database.record(conn.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone())
+
+    @app.get("/api/issues/{issue_id}")
+    def get_issue(issue_id: str) -> dict:
+        with database.connect() as conn:
+            issue = database.record(conn.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone())
+            if not issue:
+                raise HTTPException(404, "人生 Issue 不存在")
+            issue["tasks"] = database.records(conn.execute("SELECT * FROM tasks WHERE issue_id=? ORDER BY status='已完成',id DESC", (issue_id,)).fetchall())
+            issue["sessions"] = database.records(conn.execute("SELECT * FROM sessions WHERE issue_id=? ORDER BY updated_at DESC", (issue_id,)).fetchall())
+            return issue
+
+    @app.patch("/api/issues/{issue_id}")
+    def patch_issue(issue_id: str, payload: IssuePatch) -> dict:
+        values = payload.model_dump(exclude_unset=True, mode="json")
+        if not values:
+            raise HTTPException(422, "没有需要更新的内容")
+        values["updated_at"] = now()
+        if "status" in values:
+            values["closed_at"] = now() if values["status"] in {"已解决", "已归档"} else None
+        with database.connect() as conn:
+            if not conn.execute("SELECT id FROM issues WHERE id=?", (issue_id,)).fetchone():
+                raise HTTPException(404, "人生 Issue 不存在")
+            columns = ",".join(f"{key}=?" for key in values)
+            conn.execute(f"UPDATE issues SET {columns} WHERE id=?", (*values.values(), issue_id))
+            return database.record(conn.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone())
+
+    @app.delete("/api/issues/{issue_id}", status_code=204)
+    def delete_issue(issue_id: str) -> None:
+        with database.connect() as conn:
+            if not conn.execute("SELECT id FROM issues WHERE id=?", (issue_id,)).fetchone():
+                raise HTTPException(404, "人生 Issue 不存在")
+            conn.execute("DELETE FROM issues WHERE id=?", (issue_id,))
 
     @app.get("/api/sessions/{session_id}")
     def get_session(session_id: str) -> dict:
@@ -269,7 +368,9 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
     def create_task(payload: TaskCreate) -> dict:
         timestamp = now()
         with database.connect() as conn:
-            task_id = conn.execute("INSERT INTO tasks(title,due_date,evidence,source_session_id,created_at,updated_at) VALUES (?,?,?,?,?,?)", (payload.title, payload.due_date.isoformat() if payload.due_date else None, payload.evidence, payload.source_session_id, timestamp, timestamp)).lastrowid
+            if payload.issue_id and not conn.execute("SELECT id FROM issues WHERE id=?", (payload.issue_id,)).fetchone():
+                raise HTTPException(404, "人生 Issue 不存在")
+            task_id = conn.execute("INSERT INTO tasks(title,due_date,evidence,source_session_id,issue_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)", (payload.title, payload.due_date.isoformat() if payload.due_date else None, payload.evidence, payload.source_session_id, payload.issue_id, timestamp, timestamp)).lastrowid
             return database.record(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
 
     @app.patch("/api/tasks/{task_id}")
