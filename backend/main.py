@@ -166,7 +166,7 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
         database.init()
         yield
 
-    app = FastAPI(title="人生 Issue API", version="0.5.0", lifespan=lifespan)
+    app = FastAPI(title="人生 Issue API", version="0.6.0", lifespan=lifespan)
     app.state.db = database
     app.state.index = index
     app.state.action_index = action_index
@@ -180,7 +180,7 @@ def create_app(db_path: Path | None = None, knowledge_path: Path | None = None, 
                 "open_tasks": conn.execute("SELECT COUNT(*) FROM tasks WHERE status!='已完成'").fetchone()[0],
                 "open_issues": conn.execute("SELECT COUNT(*) FROM issues WHERE status NOT IN ('已解决','已归档')").fetchone()[0],
             }
-        return {"status": "ok", "version": "0.5.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "model_config": public_model_config(), "knowledge": index.meta, "libraries": {"reflection": index.meta, "action": action_index.meta}, "stats": stats}
+        return {"status": "ok", "version": "0.6.0", "model_configured": configured(), "model": model_name() if configured() else "本地教练", "model_config": public_model_config(), "knowledge": index.meta, "libraries": {"reflection": index.meta, "action": action_index.meta}, "stats": stats}
 
     @app.post("/api/model/test")
     async def probe_model(payload: ModelOverride) -> dict:

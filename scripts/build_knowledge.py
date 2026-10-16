@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -49,6 +50,33 @@ def plain(text: str) -> str:
     return text.strip()
 
 
+def readable(text: str) -> str:
+    """Turn markdown into readable plain text while preserving paragraph boundaries."""
+    text = re.sub(r"```(?:[^\n]*)\n([\s\S]*?)```", r"\n\1\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if lines and lines[-1]:
+                lines.append("")
+            continue
+        line = re.sub(r"^>\s*", "", line)
+        line = re.sub(r"^[-*+]\s+", "• ", line)
+        line = re.sub(r"^#{1,6}\s+", "", line)
+        line = re.sub(r"[`*_#|]", " ", line)
+        line = re.sub(r"\s+", " ", line).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def stable_id(value: str) -> str:
+    return hashlib.blake2s(value.encode("utf-8"), digest_size=5).hexdigest()
+
+
 def frontmatter(text: str) -> tuple[dict[str, str], str]:
     match = FRONTMATTER_RE.match(text)
     values: dict[str, str] = {}
@@ -91,16 +119,19 @@ def sections(path: Path, relative: str) -> tuple[dict, list[dict]]:
         if len(match.group(1)) == 1:
             continue
         end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
-        content = plain(body[match.end() : end])
+        section_body = body[match.end() : end]
+        full_content = readable(section_body)
+        content = plain(section_body)
         if len(content) < 45:
             continue
         heading = plain(match.group(2))
         output.append(
             {
-                "id": f"{len(output) + 1}-{abs(hash(relative + heading)) % 10_000_000}",
+                "id": f"{len(output) + 1}-{stable_id(relative + heading)}",
                 "chapter": title,
                 "heading": heading,
                 "content": content[:1800],
+                "fullContent": full_content,
                 "source": relative,
                 "topics": topics_for(relative, heading, content),
             }
@@ -108,10 +139,11 @@ def sections(path: Path, relative: str) -> tuple[dict, list[dict]]:
     if not output:
         output.append(
             {
-                "id": f"1-{abs(hash(relative)) % 10_000_000}",
+                "id": f"1-{stable_id(relative)}",
                 "chapter": title,
                 "heading": title,
                 "content": plain(body)[:1800],
+                "fullContent": readable(body),
                 "source": relative,
                 "topics": chapter_topics,
             }

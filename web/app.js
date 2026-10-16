@@ -19,6 +19,8 @@ let currentSessionId = null;
 let currentIssueId = null;
 let lastDiscovery = null;
 let serviceInfo = null;
+let currentLibraryResults = [];
+let currentKnowledgeIndex = 0;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -604,14 +606,42 @@ function renderFilters() {
 function renderLibrary() {
   const query = $("#library-search").value.trim();
   const results = searchSections(query, activeTopic, 30);
+  currentLibraryResults = results;
   $("#result-count").textContent = `${results.length} 条结果 · 来自 ${knowledge.chapterCount || 0} 个章节、${knowledge.sectionCount || 0} 个知识段落`;
-  $("#library-results").innerHTML = results.length ? results.map((item) => `
+  $("#library-results").innerHTML = results.length ? results.map((item, index) => {
+    const preview = (item.fullContent || item.content).split(/\n\s*\n/).find(Boolean) || item.content;
+    return `
     <article class="knowledge-card">
       <header><span class="chapter">${safe(item.chapter)}</span><span class="tag-list">${item.topics.slice(0, 3).map((tag) => `<span class="tag">${safe(tag)}</span>`).join("")}</span></header>
       <h2>${safe(item.heading)}</h2>
-      <p>${safe(item.content)}</p>
-      <footer>${safe(item.source)}</footer>
-    </article>`).join("") : `<div class="empty-state"><h2>没有找到直接匹配的内容</h2><p>试试更短的词，例如“边界”“恢复”或“证据”，也可以清除主题筛选。</p></div>`;
+      <p>${safe(preview)}</p>
+      <footer><span>${safe(item.source)}</span><button class="knowledge-open" type="button" data-knowledge-index="${index}" aria-label="阅读全文：${safe(item.heading)}">阅读全文 <span aria-hidden="true">→</span></button></footer>
+    </article>`;
+  }).join("") : `<div class="empty-state"><h2>没有找到直接匹配的内容</h2><p>试试更短的词，例如“边界”“恢复”或“证据”，也可以清除主题筛选。</p></div>`;
+  $$('[data-knowledge-index]').forEach((button) => button.addEventListener("click", () => openKnowledge(Number(button.dataset.knowledgeIndex))));
+}
+
+function knowledgeSourceUrl(item) {
+  const source = item.source.split("/").map(encodeURIComponent).join("/");
+  return `${knowledge.source}/blob/main/${source}`;
+}
+
+function openKnowledge(index) {
+  const item = currentLibraryResults[index];
+  if (!item) return;
+  currentKnowledgeIndex = index;
+  $("#knowledge-reader-position").textContent = `搜索结果 ${index + 1} / ${currentLibraryResults.length}`;
+  $("#knowledge-reader-chapter").textContent = item.chapter;
+  $("#knowledge-reader-tags").innerHTML = item.topics.map((tag) => `<span class="tag">${safe(tag)}</span>`).join("");
+  $("#knowledge-reader-title").textContent = item.heading;
+  const paragraphs = (item.fullContent || item.content).split(/\n\s*\n/).filter((paragraph) => paragraph.trim());
+  $("#knowledge-reader-body").innerHTML = paragraphs.map((paragraph) => `<p>${safe(paragraph)}</p>`).join("");
+  $("#knowledge-source-link").href = knowledgeSourceUrl(item);
+  $("#knowledge-prev").disabled = index === 0;
+  $("#knowledge-next").disabled = index === currentLibraryResults.length - 1;
+  const dialog = $("#knowledge-dialog");
+  dialog.scrollTop = 0;
+  if (!dialog.open) dialog.showModal();
 }
 
 function relatedFor(values) {
@@ -672,6 +702,9 @@ function bindEvents() {
     $("#menu-button").setAttribute("aria-expanded", String(open));
   });
   $("#library-search").addEventListener("input", renderLibrary);
+  $("#knowledge-close").addEventListener("click", () => $("#knowledge-dialog").close());
+  $("#knowledge-prev").addEventListener("click", () => openKnowledge(currentKnowledgeIndex - 1));
+  $("#knowledge-next").addEventListener("click", () => openKnowledge(currentKnowledgeIndex + 1));
   $("#discovery-form").addEventListener("submit", discoverNextStep);
   $("#save-discovery-issue").addEventListener("click", saveDiscoveryAsIssue);
   $("#issue-filter").addEventListener("change", loadIssues);

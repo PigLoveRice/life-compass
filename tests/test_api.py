@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -21,6 +22,15 @@ def test_health_and_hybrid_search(tmp_path: Path):
         assert results.json()["results"]
         assert "关系" in results.json()["results"][0]["topics"]
         assert health.json()["libraries"]["action"]["sectionCount"] >= 700
+
+
+def test_knowledge_index_keeps_complete_readable_sections():
+    payload = json.loads((ROOT / "web" / "knowledge.json").read_text(encoding="utf-8"))
+    sections = payload["sections"]
+    assert sections
+    assert all(item.get("fullContent") for item in sections)
+    assert any("\n\n" in item["fullContent"] for item in sections)
+    assert max(map(lambda item: len(item["fullContent"]), sections)) > 1800
 
 
 def test_dual_library_discovery_routes_to_action_and_reflection(tmp_path: Path):

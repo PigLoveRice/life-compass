@@ -282,6 +282,30 @@
         </footer>
       </div>
     </div>
+    <dialog class="knowledge-dialog" id="knowledge-dialog" aria-labelledby="knowledge-reader-title">
+      <article>
+        <header class="knowledge-reader-head">
+          <div>
+            <p class="eyebrow">KNOWLEDGE READER</p>
+            <span id="knowledge-reader-position">知识全文</span>
+          </div>
+          <button class="dialog-close" id="knowledge-close" type="button" aria-label="关闭知识阅读器">×</button>
+        </header>
+        <div class="knowledge-reader-meta">
+          <span id="knowledge-reader-chapter"></span>
+          <div class="tag-list" id="knowledge-reader-tags"></div>
+        </div>
+        <h2 id="knowledge-reader-title"></h2>
+        <div class="knowledge-reader-body" id="knowledge-reader-body"></div>
+        <footer class="knowledge-reader-footer">
+          <a id="knowledge-source-link" target="_blank" rel="noopener noreferrer">在 GitHub 查看原始章节 ↗</a>
+          <nav aria-label="阅读相邻搜索结果">
+            <button class="secondary-action" id="knowledge-prev" type="button">← 上一篇</button>
+            <button class="secondary-action" id="knowledge-next" type="button">下一篇 →</button>
+          </nav>
+        </footer>
+      </article>
+    </dialog>
     <dialog class="issue-dialog" id="issue-dialog" aria-labelledby="issue-dialog-title">
       <form id="issue-form">
         <input id="issue-id" type="hidden" />
